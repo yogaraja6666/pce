@@ -143,9 +143,6 @@ export default function App() {
                 <span>yogaraja2026@outlook.com</span>
               </a>
             </div>
-            <p className="text-[11px] text-zinc-400 leading-relaxed">
-              "I am not a developer or professional coder; I am just an everyday citizen who created this personal initiative to help regular people safeguard their online accounts against unauthorized access."
-            </p>
           </div>
 
           {/* Legal & Government Compliance Disclaimer */}
