@@ -52,23 +52,11 @@ const PROVIDER_PRESETS = [
 ];
 
 export default function PasswordManager() {
-  // Session-only states (Auto-wiped when tab or browser closes)
-  const [googleUser, setGoogleUser] = useState(() => {
-    const session = sessionStorage.getItem('pce_session_user');
-    return session ? JSON.parse(session) : null;
-  });
-
-  const [accessToken, setAccessToken] = useState(() => {
-    return sessionStorage.getItem('pce_session_token') || null;
-  });
-
-  const [sheetFileId, setSheetFileId] = useState(() => {
-    return sessionStorage.getItem('pce_session_file_id') || null;
-  });
-
-  const [sheetLink, setSheetLink] = useState(() => {
-    return sessionStorage.getItem('pce_session_sheet_link') || '';
-  });
+  // Pure in-memory states (Zero web storage — auto-wiped immediately on page refresh, tab close, or navigation)
+  const [googleUser, setGoogleUser] = useState(null);
+  const [accessToken, setAccessToken] = useState(null);
+  const [sheetFileId, setSheetFileId] = useState(null);
+  const [sheetLink, setSheetLink] = useState('');
 
   // UI & Data states
   const [vaultItems, setVaultItems] = useState([]);
@@ -105,6 +93,13 @@ export default function PasswordManager() {
   // Inactivity Timer
   const inactivityTimerRef = useRef(null);
 
+  // Clear any residual web storage on mount to guarantee fresh login on page reload
+  useEffect(() => {
+    sessionStorage.clear();
+    localStorage.removeItem('pce_session_user');
+    localStorage.removeItem('pce_session_token');
+  }, []);
+
   // Sign out & Wipe Session
   const handleSignOut = useCallback((reason = '') => {
     setGoogleUser(null);
@@ -114,11 +109,8 @@ export default function PasswordManager() {
     setVaultItems([]);
     setVisiblePasswords({});
     
-    // Wipe session storage (ensures 0 persistence on logout / tab close)
-    sessionStorage.removeItem('pce_session_user');
-    sessionStorage.removeItem('pce_session_token');
-    sessionStorage.removeItem('pce_session_file_id');
-    sessionStorage.removeItem('pce_session_sheet_link');
+    // Explicitly wipe storage
+    sessionStorage.clear();
 
     if (reason) {
       setInactivityNotice(reason);
@@ -157,23 +149,17 @@ export default function PasswordManager() {
       onTokenReceived: async (token) => {
         try {
           setAccessToken(token);
-          sessionStorage.setItem('pce_session_token', token);
 
           // 1. Fetch user profile
           const profile = await getGoogleUserProfile(token);
           setGoogleUser(profile);
-          sessionStorage.setItem('pce_session_user', JSON.stringify(profile));
 
           // 2. Automatically load or create Drive Sheet
           setIsDriveSyncing(true);
           const driveSheet = await loadOrCreateDriveSheet(token);
 
           setSheetFileId(driveSheet.fileId);
-          sessionStorage.setItem('pce_session_file_id', driveSheet.fileId);
-
           setSheetLink(driveSheet.link);
-          sessionStorage.setItem('pce_session_sheet_link', driveSheet.link);
-
           setVaultItems(driveSheet.items || []);
 
           if (driveSheet.isNew) {
@@ -405,7 +391,7 @@ export default function PasswordManager() {
         <div className="pt-3 border-t border-zinc-900 grid grid-cols-2 gap-2 text-[11px] text-zinc-500 text-left">
           <div className="flex items-center gap-1.5">
             <Check className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Auto-logout on tab close</span>
+            <span>Auto-logout on page refresh</span>
           </div>
           <div className="flex items-center gap-1.5">
             <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -528,7 +514,7 @@ export default function PasswordManager() {
         </span>
         <span className="flex items-center gap-1 text-zinc-500">
           <Timer className="w-3 h-3" />
-          <span>Auto-locks on inactivity & tab close</span>
+          <span>Auto-locks on page refresh & inactivity</span>
         </span>
       </div>
 

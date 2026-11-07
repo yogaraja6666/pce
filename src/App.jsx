@@ -29,68 +29,64 @@ export default function App() {
       <main className="flex-1 max-w-4xl w-full mx-auto px-6 py-10 md:py-14 space-y-10">
         
         {/* VIEW 1: BREACH RADAR (VERSION 1 - NO LOGIN REQUIRED) */}
-        {activeView === 'v1_radar' && (
-          <div className="space-y-10 animate-fadeIn">
-            {/* Hero Section */}
-            <div className="text-center space-y-3 max-w-2xl mx-auto">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs text-zinc-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span>PCE Intelligence • Personal Cyber Exposure Defense</span>
-              </div>
-
-              <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-zinc-100">
-                Personal Cyber Exposure & Account Defense
-              </h1>
-
-              <p className="text-sm text-zinc-400 leading-relaxed max-w-lg mx-auto">
-                Check if your email or passwords exist in public hacker databases and stealer logs without creating an account.
-              </p>
+        <div className={activeView === 'v1_radar' ? 'space-y-10 animate-fadeIn' : 'hidden'}>
+          {/* Hero Section */}
+          <div className="text-center space-y-3 max-w-2xl mx-auto">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs text-zinc-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span>PCE Intelligence • Personal Cyber Exposure Defense</span>
             </div>
 
-            {/* Breach Scanner (v1 Core Module) */}
-            <BreachScanner />
+            <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-zinc-100">
+              Personal Cyber Exposure & Account Defense
+            </h1>
 
-            {/* Prompt to Vault */}
-            <div className="p-5 rounded-2xl bg-zinc-900/30 border border-zinc-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-emerald-400 shrink-0">
-                  <KeyRound className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-semibold text-zinc-200">Need to store and protect your credentials?</h4>
-                  <p className="text-xs text-zinc-400">Manage Gmail, Microsoft, Instagram, X with rotation countdowns and 2FA backup codes in your encrypted vault.</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setActiveView('vault')}
-                className="px-4 py-2 bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-medium rounded-xl transition-all shadow-sm shrink-0"
-              >
-                Open Password Vault →
-              </button>
-            </div>
+            <p className="text-sm text-zinc-400 leading-relaxed max-w-lg mx-auto">
+              Check if your email or passwords exist in public hacker databases and stealer logs without creating an account.
+            </p>
           </div>
-        )}
 
-        {/* VIEW 2: PASSWORD MANAGER (REQUIRES SECURE MASTER LOGIN) */}
-        {activeView === 'vault' && (
-          <div className="space-y-8 animate-fadeIn">
-            <div className="text-center space-y-2 max-w-xl mx-auto">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs text-zinc-400">
-                <Lock className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Zero-Knowledge AES-GCM-256 Vault</span>
+          {/* Breach Scanner (v1 Core Module) */}
+          <BreachScanner />
+
+          {/* Prompt to Vault */}
+          <div className="p-5 rounded-2xl bg-zinc-900/30 border border-zinc-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-emerald-400 shrink-0">
+                <KeyRound className="w-5 h-5" />
               </div>
-              <h1 className="text-2xl md:text-3xl font-semibold text-zinc-100">
-                Encrypted Credentials & 2FA Manager
-              </h1>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                Store multi-platform credentials, monitor password rotation countdowns, and export backups with document password encryption.
-              </p>
+              <div>
+                <h4 className="text-sm font-semibold text-zinc-200">Need to store and protect your credentials?</h4>
+                <p className="text-xs text-zinc-400">Manage Gmail, Microsoft, Instagram, X with rotation countdowns and 2FA backup codes in your encrypted vault.</p>
+              </div>
             </div>
-
-            {/* Password Manager Component */}
-            <PasswordManager />
+            <button
+              onClick={() => setActiveView('vault')}
+              className="px-4 py-2 bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-medium rounded-xl transition-all shadow-sm shrink-0"
+            >
+              Open Password Vault →
+            </button>
           </div>
-        )}
+        </div>
+
+        {/* VIEW 2: PASSWORD MANAGER (LIVE GOOGLE DRIVE SYNC - AUTO-LOCKS ON REFRESH) */}
+        <div className={activeView === 'vault' ? 'space-y-8 animate-fadeIn' : 'hidden'}>
+          <div className="text-center space-y-2 max-w-xl mx-auto">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs text-zinc-400">
+              <Lock className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Zero-Knowledge AES-GCM-256 Vault</span>
+            </div>
+            <h1 className="text-2xl md:text-3xl font-semibold text-zinc-100">
+              Encrypted Credentials & 2FA Manager
+            </h1>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Store multi-platform credentials, monitor password rotation countdowns, and export backups with document password encryption.
+            </p>
+          </div>
+
+          {/* Password Manager Component */}
+          <PasswordManager />
+        </div>
 
         {/* Minimal Feature Pillars */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-6 border-t border-zinc-900">
