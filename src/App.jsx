@@ -160,7 +160,11 @@ export default function App() {
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
               <span>PCE Intelligence • 100% Free & Open Cyber Defense</span>
             </div>
-            <span>Dedicated to public online safety and cyber awareness</span>
+            <div className="flex items-center gap-4 text-zinc-500">
+              <a href="https://pce-seven.vercel.app" className="hover:text-zinc-300 underline underline-offset-2">Privacy Policy</a>
+              <a href="https://pce-seven.vercel.app" className="hover:text-zinc-300 underline underline-offset-2">Terms of Service</a>
+              <span>Dedicated to online safety</span>
+            </div>
           </div>
         </div>
       </footer>
