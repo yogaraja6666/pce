@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
-  Lock, 
   KeyRound, 
   Plus, 
   Trash2, 
@@ -20,18 +19,24 @@ import {
   RefreshCw,
   ExternalLink,
   Cloud,
-  CheckCheck
+  Bell,
+  Calendar,
+  Timer
 } from 'lucide-react';
 import { calculatePasswordScore } from '../services/cryptoVault';
 import { 
-  requestGoogleDriveToken, 
-  syncVaultToGoogleDriveSheet, 
+  requestUnifiedGoogleAuth, 
+  getGoogleUserProfile, 
+  loadOrCreateDriveSheet, 
+  updateDriveSheet, 
+  generateGoogleTaskReminderUrl,
   SHEET_NAME 
 } from '../services/googleDriveService';
 import PasswordGenerator from './PasswordGenerator';
 
 // Permanent Google OAuth 2.0 Client ID
 const GOOGLE_CLIENT_ID = '1062545025907-balc2lf7mgol3cibb1mdqckfcggpb5ef.apps.googleusercontent.com';
+const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes inactivity auto-logout
 
 // Supported preset providers
 const PROVIDER_PRESETS = [
@@ -47,37 +52,32 @@ const PROVIDER_PRESETS = [
 ];
 
 export default function PasswordManager() {
-  // Verified Google User state
+  // Session-only states (Auto-wiped when tab or browser closes)
   const [googleUser, setGoogleUser] = useState(() => {
-    const saved = localStorage.getItem('pce_verified_google_user');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return null;
-      }
-    }
-    return null;
+    const session = sessionStorage.getItem('pce_session_user');
+    return session ? JSON.parse(session) : null;
   });
 
-  // Google Drive Token & Live Sheet State
-  const [driveAccessToken, setDriveAccessToken] = useState(() => {
-    return sessionStorage.getItem('pce_drive_token') || null;
+  const [accessToken, setAccessToken] = useState(() => {
+    return sessionStorage.getItem('pce_session_token') || null;
   });
-  const [liveSheetLink, setLiveSheetLink] = useState(() => {
-    return localStorage.getItem('pce_live_sheet_link') || '';
+
+  const [sheetFileId, setSheetFileId] = useState(() => {
+    return sessionStorage.getItem('pce_session_file_id') || null;
   });
-  const [isDriveSyncing, setIsDriveSyncing] = useState(false);
-  const [driveError, setDriveError] = useState('');
 
-  const [authError, setAuthError] = useState('');
-  const [isGisReady, setIsGisReady] = useState(false);
-  const googleBtnRef = useRef(null);
+  const [sheetLink, setSheetLink] = useState(() => {
+    return sessionStorage.getItem('pce_session_sheet_link') || '';
+  });
 
-  // Vault data state
+  // UI & Data states
   const [vaultItems, setVaultItems] = useState([]);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [isDriveSyncing, setIsDriveSyncing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [saveToast, setSaveToast] = useState('');
+  const [inactivityNotice, setInactivityNotice] = useState('');
 
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
@@ -102,149 +102,98 @@ export default function PasswordManager() {
     url: ''
   });
 
-  // Storage key for the authenticated user
-  const getUserStorageKey = (user) => {
-    const id = user.sub || user.email;
-    return `pce_vault_data_${id.toLowerCase()}`;
-  };
+  // Inactivity Timer
+  const inactivityTimerRef = useRef(null);
 
-  // Load user items whenever active user changes
+  // Sign out & Wipe Session
+  const handleSignOut = useCallback((reason = '') => {
+    setGoogleUser(null);
+    setAccessToken(null);
+    setSheetFileId(null);
+    setSheetLink('');
+    setVaultItems([]);
+    setVisiblePasswords({});
+    
+    // Wipe session storage (ensures 0 persistence on logout / tab close)
+    sessionStorage.removeItem('pce_session_user');
+    sessionStorage.removeItem('pce_session_token');
+    sessionStorage.removeItem('pce_session_file_id');
+    sessionStorage.removeItem('pce_session_sheet_link');
+
+    if (reason) {
+      setInactivityNotice(reason);
+      setTimeout(() => setInactivityNotice(''), 6000);
+    }
+  }, []);
+
+  // Inactivity auto-logout listener
   useEffect(() => {
-    if (googleUser) {
-      const key = getUserStorageKey(googleUser);
-      const saved = localStorage.getItem(key);
-      if (saved) {
-        try {
-          setVaultItems(JSON.parse(saved));
-        } catch {
-          setVaultItems([]);
-        }
-      } else {
-        setVaultItems([]);
-      }
-    }
-  }, [googleUser]);
+    if (!googleUser) return;
 
-  // Handle Google Credential Response (Sign-In)
-  const handleCredentialResponse = (response) => {
-    try {
-      if (!response.credential) throw new Error('No credential returned from Google');
-      
-      const base64Url = response.credential.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(
-        atob(base64)
-          .split('')
-          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-          .join('')
-      );
-      
-      const payload = JSON.parse(jsonPayload);
-      const userObj = {
-        name: payload.name || 'Google User',
-        email: payload.email,
-        picture: payload.picture || '',
-        sub: payload.sub
-      };
+    const resetTimer = () => {
+      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = setTimeout(() => {
+        handleSignOut('Logged out automatically due to 5 minutes of inactivity for your security.');
+      }, INACTIVITY_TIMEOUT_MS);
+    };
 
-      setGoogleUser(userObj);
-      localStorage.setItem('pce_verified_google_user', JSON.stringify(userObj));
-      setAuthError('');
-    } catch (err) {
-      console.error('Google Auth decode error:', err);
-      setAuthError('Failed to verify Google identity. Please try again.');
-    }
-  };
+    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    events.forEach(e => window.addEventListener(e, resetTimer));
+    resetTimer(); // Initialize
 
-  // Initialize and Render Official Google Sign-In Button
-  useEffect(() => {
-    if (!googleUser) {
-      const checkAndRender = () => {
-        if (window.google?.accounts?.id && googleBtnRef.current) {
-          try {
-            window.google.accounts.id.initialize({
-              client_id: GOOGLE_CLIENT_ID,
-              callback: handleCredentialResponse,
-              auto_select: false,
-              cancel_on_tap_outside: true
-            });
+    return () => {
+      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+      events.forEach(e => window.removeEventListener(e, resetTimer));
+    };
+  }, [googleUser, handleSignOut]);
 
-            window.google.accounts.id.renderButton(googleBtnRef.current, {
-              type: 'standard',
-              theme: 'outline',
-              size: 'large',
-              text: 'continue_with',
-              shape: 'pill',
-              logo_alignment: 'left',
-              width: 280
-            });
-            setIsGisReady(true);
-          } catch (err) {
-            console.error('GIS render error:', err);
-          }
-        }
-      };
+  // Unified Google Login (Single click: Identity + Drive connection)
+  const handleGoogleSignIn = () => {
+    setAuthError('');
+    setAuthLoading(true);
 
-      if (window.google?.accounts?.id) {
-        checkAndRender();
-      } else {
-        const interval = setInterval(() => {
-          if (window.google?.accounts?.id) {
-            clearInterval(interval);
-            checkAndRender();
-          }
-        }, 200);
-        return () => clearInterval(interval);
-      }
-    }
-  }, [googleUser]);
-
-  // Request Drive Authorization & Create/Sync Google Sheet in user's Drive
-  const handleConnectDriveAndSync = (currentItems = vaultItems) => {
-    setDriveError('');
-    setIsDriveSyncing(true);
-
-    requestGoogleDriveToken({
+    requestUnifiedGoogleAuth({
       clientId: GOOGLE_CLIENT_ID,
       onTokenReceived: async (token) => {
         try {
-          setDriveAccessToken(token);
-          sessionStorage.setItem('pce_drive_token', token);
+          setAccessToken(token);
+          sessionStorage.setItem('pce_session_token', token);
 
-          // Sync directly to Google Drive Sheet
-          const result = await syncVaultToGoogleDriveSheet(token, currentItems);
-          if (result.link) {
-            setLiveSheetLink(result.link);
-            localStorage.setItem('pce_live_sheet_link', result.link);
+          // 1. Fetch user profile
+          const profile = await getGoogleUserProfile(token);
+          setGoogleUser(profile);
+          sessionStorage.setItem('pce_session_user', JSON.stringify(profile));
+
+          // 2. Automatically load or create Drive Sheet
+          setIsDriveSyncing(true);
+          const driveSheet = await loadOrCreateDriveSheet(token);
+
+          setSheetFileId(driveSheet.fileId);
+          sessionStorage.setItem('pce_session_file_id', driveSheet.fileId);
+
+          setSheetLink(driveSheet.link);
+          sessionStorage.setItem('pce_session_sheet_link', driveSheet.link);
+
+          setVaultItems(driveSheet.items || []);
+
+          if (driveSheet.isNew) {
+            triggerToast('✨ New Google Sheet created in your Google Drive!');
+          } else {
+            triggerToast(`✅ Connected! Synced ${driveSheet.items.length} accounts from your Google Drive.`);
           }
-          triggerToast(`✅ Successfully created & saved Google Sheet in your Google Drive!`);
         } catch (err) {
-          console.error('Drive sync error:', err);
-          setDriveError(err.message || 'Failed to sync to Google Drive');
+          console.error('Google Sign-in / Drive error:', err);
+          setAuthError(err.message || 'Error connecting to your Google Account and Drive.');
         } finally {
+          setAuthLoading(false);
           setIsDriveSyncing(false);
         }
       },
       onError: (err) => {
-        setIsDriveSyncing(false);
-        setDriveError(err.message || 'Drive permission was not granted.');
+        setAuthLoading(false);
+        setAuthError(err.message || 'Google authentication was not completed.');
       }
     });
-  };
-
-  // Sign out
-  const handleSignOut = () => {
-    setGoogleUser(null);
-    setDriveAccessToken(null);
-    setLiveSheetLink('');
-    sessionStorage.removeItem('pce_drive_token');
-    localStorage.removeItem('pce_verified_google_user');
-    localStorage.removeItem('pce_live_sheet_link');
-    setVaultItems([]);
-    setVisiblePasswords({});
-    if (window.google?.accounts?.id) {
-      window.google.accounts.id.disableAutoSelect();
-    }
   };
 
   // Compute countdown & status for an item
@@ -260,6 +209,7 @@ export default function PasswordManager() {
     if (daysLeft < 0) {
       return {
         daysLeft: 0,
+        expiryDate,
         text: `Expired ${Math.abs(daysLeft)}d ago`,
         status: 'expired',
         badgeColor: 'bg-rose-500/10 text-rose-400 border-rose-500/20'
@@ -267,6 +217,7 @@ export default function PasswordManager() {
     } else if (daysLeft <= 14) {
       return {
         daysLeft,
+        expiryDate,
         text: `${daysLeft} days to change`,
         status: 'warning',
         badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20'
@@ -274,6 +225,7 @@ export default function PasswordManager() {
     } else {
       return {
         daysLeft,
+        expiryDate,
         text: `${daysLeft} days to change`,
         status: 'good',
         badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
@@ -281,32 +233,23 @@ export default function PasswordManager() {
     }
   };
 
-  // Save changes to current user's personal storage AND live Drive Sheet if connected
+  // Save changes directly to Google Drive Sheet
   const handleSaveItems = async (updatedItems) => {
     setVaultItems(updatedItems);
-    if (googleUser) {
-      const key = getUserStorageKey(googleUser);
-      localStorage.setItem(key, JSON.stringify(updatedItems));
-    }
 
-    // If already has active Drive token, update Google Sheet in real time
-    if (driveAccessToken) {
+    if (accessToken && sheetFileId) {
       setIsDriveSyncing(true);
       try {
-        const result = await syncVaultToGoogleDriveSheet(driveAccessToken, updatedItems);
-        if (result.link) {
-          setLiveSheetLink(result.link);
-          localStorage.setItem('pce_live_sheet_link', result.link);
-        }
-        triggerToast('Saved to your Google Drive Sheet!');
+        await updateDriveSheet(accessToken, sheetFileId, updatedItems);
+        triggerToast('✅ Saved & updated directly in your Google Drive Sheet!');
       } catch (err) {
-        console.error('Silent drive sync failed, retry next time', err);
-        triggerToast('Saved locally (Google Drive update queued)');
+        console.error('Google Drive update error:', err);
+        triggerToast('⚠️ Local update saved (Google Drive sync failed, will retry)');
       } finally {
         setIsDriveSyncing(false);
       }
     } else {
-      triggerToast('Saved locally! Click "Save to Google Drive" to sync with your Drive.');
+      triggerToast('Saved locally');
     }
   };
 
@@ -376,7 +319,7 @@ export default function PasswordManager() {
   };
 
   const handleDeleteItem = (id) => {
-    if (window.confirm('Delete this account credential?')) {
+    if (window.confirm('Delete this account credential from your Google Sheet?')) {
       const filtered = vaultItems.filter(item => item.id !== id);
       handleSaveItems(filtered);
     }
@@ -399,56 +342,97 @@ export default function PasswordManager() {
   });
 
   // -------------------------------------------------------------
-  // VIEW 1: OFFICIAL GOOGLE SIGN IN
+  // VIEW 1: UNIFIED 1-STEP GOOGLE SIGN IN
   // -------------------------------------------------------------
   if (!googleUser) {
     return (
       <div className="w-full max-w-md mx-auto p-6 md:p-8 rounded-3xl bg-zinc-950 border border-zinc-800 space-y-6 shadow-2xl text-center">
         
-        {/* Google Security Icon */}
+        {/* Security Icon */}
         <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-100 flex items-center justify-center mx-auto shadow-md">
-          <svg className="w-7 h-7" viewBox="0 0 24 24">
-            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-          </svg>
+          <Cloud className="w-7 h-7 text-emerald-400" />
         </div>
 
         <div className="space-y-2">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Google Authenticated Session • Zero Database</span>
+            <span>Zero Server Database • Auto Google Drive Sync</span>
           </div>
 
           <h2 className="text-2xl font-bold text-zinc-100 tracking-tight">
-            Sign In with Google
+            Sign In with Google Account
           </h2>
 
           <p className="text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto">
-            Click below to sign in with your official Google Account. Your vault syncs directly with a Google Sheet in your personal Google Drive.
+            Sign in once to automatically connect your personal Google Drive. New accounts get a fresh sheet; returning accounts automatically sync existing credentials.
           </p>
         </div>
 
-        {/* Official Google Sign-In Button */}
-        <div className="flex flex-col items-center justify-center pt-2 space-y-3 min-h-[50px]">
-          <div ref={googleBtnRef} className="flex items-center justify-center" />
-          {!isGisReady && (
-            <div className="flex items-center gap-2 text-xs text-zinc-500">
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              <span>Loading Google Sign-In...</span>
-            </div>
-          )}
-          <p className="text-[11px] text-zinc-500">
-            Protected by Google Identity Services & client-side encryption.
-          </p>
+        {inactivityNotice && (
+          <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs rounded-xl flex items-center gap-2">
+            <Timer className="w-4 h-4 shrink-0" />
+            <span>{inactivityNotice}</span>
+          </div>
+        )}
+
+        {/* 1-Step Unified Google Login Button */}
+        <div className="pt-2">
+          <button
+            onClick={handleGoogleSignIn}
+            disabled={authLoading}
+            className="w-full py-3.5 px-5 bg-white hover:bg-zinc-100 disabled:opacity-50 text-zinc-950 font-semibold text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-3 border border-zinc-200"
+          >
+            {authLoading ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin text-zinc-600" />
+                <span>Connecting to Google Drive...</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+                <span>Sign In with Google</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Security Feature Highlights */}
+        <div className="pt-3 border-t border-zinc-900 grid grid-cols-2 gap-2 text-[11px] text-zinc-500 text-left">
+          <div className="flex items-center gap-1.5">
+            <Check className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Auto-logout on tab close</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Check className="w-3.5 h-3.5 text-emerald-400" />
+            <span>5-min inactivity lock</span>
+          </div>
         </div>
 
         {authError && (
-          <p className="text-rose-400 text-xs flex items-center justify-center gap-1.5 pt-1">
-            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-            {authError}
-          </p>
+          <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs text-left space-y-1">
+            <p className="font-semibold flex items-center gap-1">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <span>{authError}</span>
+            </p>
+            {authError.includes('403') || authError.includes('verification') ? (
+              <p className="text-[11px] text-rose-200">
+                👉 Add your email under <strong>Test Users</strong> at{' '}
+                <a 
+                  href="https://console.cloud.google.com/apis/credentials/consent" 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="underline font-bold text-white"
+                >
+                  OAuth Consent Screen
+                </a>.
+              </p>
+            ) : null}
+          </div>
         )}
 
       </div>
@@ -456,7 +440,7 @@ export default function PasswordManager() {
   }
 
   // -------------------------------------------------------------
-  // VIEW 2: LOGGED-IN CREDENTIAL VAULT (With Live Google Drive Sync)
+  // VIEW 2: LOGGED-IN CREDENTIAL VAULT (Live Google Sheet Sync)
   // -------------------------------------------------------------
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
@@ -486,7 +470,7 @@ export default function PasswordManager() {
                 {googleUser.name}
               </h2>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                Google Verified
+                Google Drive Synced
               </span>
             </div>
             <p className="text-xs text-zinc-400 mt-0.5">
@@ -510,9 +494,23 @@ export default function PasswordManager() {
             <span>Add Account</span>
           </button>
 
+          {/* Direct link to Google Sheet in user's Drive */}
+          {sheetLink && (
+            <a
+              href={sheetLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-sm transition-all"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Open Google Sheet</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+
           {/* Sign Out */}
           <button
-            onClick={handleSignOut}
+            onClick={() => handleSignOut()}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 rounded-lg text-xs font-medium transition-all"
           >
             <LogOut className="w-3.5 h-3.5" />
@@ -521,85 +519,18 @@ export default function PasswordManager() {
         </div>
       </div>
 
-      {/* Google Drive Live Sheet Banner */}
-      <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-zinc-900/60 to-zinc-900/40 border border-emerald-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-            <FileSpreadsheet className="w-5 h-5" />
-          </div>
-          <div>
-            <h4 className="text-xs font-bold text-zinc-100 flex items-center gap-1.5">
-              <span>Google Drive Sheet Storage:</span>
-              <span className="text-emerald-400 font-mono font-normal">"{SHEET_NAME}"</span>
-            </h4>
-            <p className="text-[11px] text-zinc-400 mt-0.5">
-              {liveSheetLink ? (
-                <span className="text-emerald-300 flex items-center gap-1">
-                  <CheckCheck className="w-3 h-3 text-emerald-400" />
-                  Synced to your personal Google Drive spreadsheet.
-                </span>
-              ) : (
-                'Grant one-time Drive permission to automatically save this as a real Google Sheet in your Google Drive.'
-              )}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {liveSheetLink ? (
-            <a
-              href={liveSheetLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-sm transition-all"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Open in Google Sheets</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          ) : (
-            <button
-              onClick={() => handleConnectDriveAndSync()}
-              disabled={isDriveSyncing}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-sm transition-all"
-            >
-              {isDriveSyncing ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Connecting Drive...</span>
-                </>
-              ) : (
-                <>
-                  <Cloud className="w-3.5 h-3.5" />
-                  <span>Save to My Google Drive</span>
-                </>
-              )}
-            </button>
-          )}
-        </div>
+      {/* Security Status Ribbon */}
+      <div className="flex items-center justify-between px-4 py-2 bg-zinc-900/30 border border-zinc-800/60 rounded-xl text-[11px] text-zinc-400">
+        <span className="flex items-center gap-1.5">
+          <Cloud className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Synced with: <strong>{SHEET_NAME}</strong> in your Google Drive</span>
+          {isDriveSyncing && <RefreshCw className="w-3 h-3 animate-spin text-emerald-400 ml-1" />}
+        </span>
+        <span className="flex items-center gap-1 text-zinc-500">
+          <Timer className="w-3 h-3" />
+          <span>Auto-locks on inactivity & tab close</span>
+        </span>
       </div>
-
-      {driveError && (
-        <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="font-semibold">{driveError}</p>
-            {driveError.includes('disabled') && (
-              <p className="text-[11px] text-rose-200">
-                👉 Click here to enable Google Drive API in your Google Cloud project: {' '}
-                <a 
-                  href="https://console.cloud.google.com/apis/library/drive.googleapis.com" 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="underline font-bold text-white hover:text-rose-100"
-                >
-                  Enable Google Drive API
-                </a>
-              </p>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Search Bar */}
       <div className="relative max-w-sm">
@@ -618,10 +549,10 @@ export default function PasswordManager() {
         <div className="p-12 text-center rounded-2xl bg-zinc-900/20 border border-zinc-800/80 space-y-3">
           <KeyRound className="w-8 h-8 text-zinc-600 mx-auto" />
           <h3 className="text-sm font-semibold text-zinc-300">
-            {vaultItems.length === 0 ? 'No accounts stored in your verified vault' : 'No matching accounts found'}
+            {vaultItems.length === 0 ? 'No accounts stored in your Google Sheet yet' : 'No matching accounts found'}
           </h3>
           <p className="text-xs text-zinc-500 max-w-md mx-auto">
-            Click <strong>"Add Account"</strong> above to store your Gmail, Microsoft, Reddit, X, Instagram, or any other credentials with custom rotation countdowns and 2FA backup codes.
+            Click <strong>"Add Account"</strong> to store your credentials. When saved, it automatically updates the spreadsheet in your Google Drive!
           </p>
         </div>
       ) : (
@@ -630,6 +561,11 @@ export default function PasswordManager() {
             const rot = getRotationStatus(item);
             const scoreInfo = calculatePasswordScore(item.password);
             const isPwVisible = visiblePasswords[item.id] || false;
+            const taskReminderUrl = generateGoogleTaskReminderUrl({
+              provider: item.providerName,
+              username: item.username,
+              expiryDate: rot.expiryDate
+            });
 
             return (
               <div
@@ -719,7 +655,7 @@ export default function PasswordManager() {
                     </button>
                   </div>
 
-                  {/* 2FA Backup codes indicator */}
+                  {/* 2FA Backup codes & Google Task Reminder Button */}
                   <div className="flex items-center gap-2">
                     {item.backupCodes && (
                       <button
@@ -728,9 +664,21 @@ export default function PasswordManager() {
                         title="Copy 2FA Backup Codes"
                       >
                         {copiedId === `codes_${item.id}` ? <Check className="w-3 h-3 text-emerald-400" /> : <ShieldCheck className="w-3 h-3 text-cyan-400" />}
-                        <span>2FA Backup Codes ({item.backupCodes.split('\n').filter(Boolean).length})</span>
+                        <span>2FA Codes ({item.backupCodes.split('\n').filter(Boolean).length})</span>
                       </button>
                     )}
+
+                    {/* Google Tasks / Calendar Reminder */}
+                    <a
+                      href={taskReminderUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 rounded-lg text-[11px] transition-all"
+                      title="Set reminder in Google Tasks / Calendar for rotation day"
+                    >
+                      <Bell className="w-3 h-3 text-amber-400" />
+                      <span>Set Google Task Reminder</span>
+                    </a>
                   </div>
                 </div>
 
@@ -739,7 +687,7 @@ export default function PasswordManager() {
                   <div className="flex items-center gap-3">
                     <span>Created: {new Date(item.createdDate || Date.now()).toLocaleDateString()}</span>
                     <span>•</span>
-                    <span>Last Changed: {new Date(item.lastChangedDate || Date.now()).toLocaleDateString()}</span>
+                    <span className="text-zinc-400 font-medium">Last Changed: {new Date(item.lastChangedDate || Date.now()).toLocaleDateString()}</span>
                   </div>
                   {item.notes && <span className="italic">{item.notes}</span>}
                 </div>
@@ -768,7 +716,7 @@ export default function PasswordManager() {
                 {editingItem ? 'Edit Credential' : 'Add Account Credential'}
               </h3>
               <p className="text-xs text-zinc-400">
-                Saved directly to your Google Drive Sheet. Zero database on our servers.
+                Saved directly to your Google Sheet in Google Drive. Zero database on our servers.
               </p>
             </div>
 
@@ -922,7 +870,7 @@ export default function PasswordManager() {
                   type="submit"
                   className="px-5 py-2 bg-zinc-100 hover:bg-white text-zinc-950 font-semibold rounded-xl transition-all shadow-sm"
                 >
-                  {editingItem ? 'Save Changes' : 'Save to Vault'}
+                  {editingItem ? 'Save Changes' : 'Save to Google Sheet'}
                 </button>
               </div>
             </form>
