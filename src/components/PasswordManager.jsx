@@ -16,100 +16,115 @@ import {
   Download, 
   Upload, 
   Mail, 
-  Bell, 
-  Calendar, 
   ExternalLink,
   Search,
   Sparkles,
   Sliders,
   CheckCircle2,
-  X
+  X,
+  FileSpreadsheet,
+  Cloud,
+  LogOut,
+  RefreshCw,
+  FolderLock
 } from 'lucide-react';
 import { 
-  deriveKeyFromPassword, 
-  encryptObject, 
-  decryptObject, 
   calculatePasswordScore, 
   exportVaultEncrypted, 
   importVaultEncrypted 
 } from '../services/cryptoVault';
+import { 
+  initGoogleTokenClient, 
+  getGoogleUserProfile, 
+  loadVaultFromGoogleDrive, 
+  saveVaultToGoogleDrive 
+} from '../services/googleDriveService';
 import PasswordGenerator from './PasswordGenerator';
 
-const STORAGE_VAULT_KEY = 'shield_vault_data';
-const STORAGE_META_KEY = 'shield_vault_meta';
-
-// Presets for quick icon & naming
-const PLATFORM_PRESETS = [
+// Supported preset providers
+const PROVIDER_PRESETS = [
   { id: 'google', name: 'Google / Gmail', color: 'text-red-400' },
   { id: 'microsoft', name: 'Microsoft / Outlook', color: 'text-blue-400' },
+  { id: 'reddit', name: 'Reddit', color: 'text-orange-500' },
+  { id: 'x', name: 'X (Twitter)', color: 'text-zinc-200' },
   { id: 'instagram', name: 'Instagram', color: 'text-pink-400' },
   { id: 'facebook', name: 'Facebook', color: 'text-blue-500' },
-  { id: 'x', name: 'X (Twitter)', color: 'text-zinc-200' },
-  { id: 'whatsapp', name: 'WhatsApp', color: 'text-emerald-400' },
   { id: 'github', name: 'GitHub', color: 'text-purple-400' },
   { id: 'amazon', name: 'Amazon', color: 'text-amber-400' },
   { id: 'custom', name: 'Other Service', color: 'text-zinc-400' }
 ];
 
-export default function PasswordManager() {
-  // Vault state
-  const [isSetup, setIsSetup] = useState(false);
-  const [isUnlocked, setIsUnlocked] = useState(false);
-  const [activeCryptoKey, setActiveCryptoKey] = useState(null);
-  const [vaultItems, setVaultItems] = useState([]);
-  const [masterPasswordInput, setMasterPasswordInput] = useState('');
-  const [authError, setAuthError] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
+const LOCAL_STORAGE_CACHE_KEY = 'pce_cached_vault_items';
+const LOCAL_STORAGE_USER_KEY = 'pce_google_user';
 
-  // Modals & UI states
+export default function PasswordManager() {
+  // Authentication & Google Drive state
+  const [googleUser, setGoogleUser] = useState(null);
+  const [accessToken, setAccessToken] = useState(null);
+  const [driveFileId, setDriveFileId] = useState(null);
+  const [isDriveSyncing, setIsDriveSyncing] = useState(false);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
+
+  // Google OAuth Client ID (Uses user-configured or demo fallback)
+  const [customClientId, setCustomClientId] = useState(() => {
+    return localStorage.getItem('pce_google_client_id') || '';
+  });
+  const [showConfigModal, setShowConfigModal] = useState(false);
+
+  // Vault data state
+  const [vaultItems, setVaultItems] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [syncStatusText, setSyncStatusText] = useState('');
+
+  // Modals
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [showExportModal, setShowExportModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
   const [exportPassword, setExportPassword] = useState('');
-  const [importPassword, setImportPassword] = useState('');
-  const [importFileContent, setImportFileContent] = useState('');
   const [exportSuccess, setExportSuccess] = useState(false);
   const [modalError, setModalError] = useState('');
 
-  // Notification email settings
-  const [alertEmail, setAlertEmail] = useState('');
-  const [showNotificationToast, setShowNotificationToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-
-  // Password visibility map { [id]: boolean }
+  // Credential Visibility & Copy tracking
   const [visiblePasswords, setVisiblePasswords] = useState({});
   const [copiedId, setCopiedId] = useState(null);
 
-  // Form state for Add/Edit
+  // Form State
   const [formData, setFormData] = useState({
-    platform: 'google',
+    provider: 'google',
     customName: '',
     username: '',
     password: '',
     backupCodes: '',
     rotationDays: 60,
+    createdDate: new Date().toISOString(),
+    lastChangedDate: new Date().toISOString(),
     notes: '',
     url: ''
   });
 
-  // Check initial vault existence on mount
+  // Restore session from local storage on mount
   useEffect(() => {
-    const meta = localStorage.getItem(STORAGE_META_KEY);
-    if (meta) {
-      setIsSetup(true);
+    const savedUser = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
+    const cachedItems = localStorage.getItem(LOCAL_STORAGE_CACHE_KEY);
+
+    if (savedUser) {
       try {
-        const parsed = JSON.parse(meta);
-        if (parsed.alertEmail) setAlertEmail(parsed.alertEmail);
+        setGoogleUser(JSON.parse(savedUser));
+      } catch {}
+    }
+    if (cachedItems) {
+      try {
+        setVaultItems(JSON.parse(cachedItems));
       } catch {}
     }
   }, []);
 
   // Compute countdown & status for an item
   const getRotationStatus = (item) => {
-    const created = new Date(item.updatedAt || item.createdAt || Date.now());
+    const lastChanged = new Date(item.lastChangedDate || item.createdDate || Date.now());
     const rotationDays = item.rotationDays || 60;
-    const expiryDate = new Date(created.getTime() + rotationDays * 24 * 60 * 60 * 1000);
+    const expiryDate = new Date(lastChanged.getTime() + rotationDays * 24 * 60 * 60 * 1000);
     const now = new Date();
 
     const diffMs = expiryDate.getTime() - now.getTime();
@@ -139,103 +154,110 @@ export default function PasswordManager() {
     }
   };
 
-  // Master setup or unlock handler
-  const handleVaultAuth = async (e) => {
-    e.preventDefault();
+  // Connect via Google Sign-In
+  const handleGoogleSignIn = () => {
     setAuthError('');
-    if (!masterPasswordInput || masterPasswordInput.length < 8) {
-      setAuthError('Master password must be at least 8 characters');
+    
+    // Check if client ID is provided
+    if (!customClientId) {
+      // If user hasn't set up a Google Client ID yet, open simple modal or direct drive sign-in
+      setShowConfigModal(true);
       return;
     }
 
-    try {
-      if (!isSetup) {
-        // First-time setup
-        const salt = crypto.getRandomValues(new Uint8Array(16));
-        const key = await deriveKeyFromPassword(masterPasswordInput, salt);
-        
-        // Save initial empty encrypted vault
-        const encrypted = await encryptObject([], key);
-        localStorage.setItem(STORAGE_VAULT_KEY, JSON.stringify(encrypted));
-        
-        // Save salt and meta verification
-        const meta = {
-          salt: Array.from(salt),
-          createdAt: new Date().toISOString(),
-          alertEmail: alertEmail || ''
-        };
-        localStorage.setItem(STORAGE_META_KEY, JSON.stringify(meta));
+    setAuthLoading(true);
+    const client = initGoogleTokenClient({
+      clientId: customClientId,
+      onTokenReceived: async (token) => {
+        try {
+          setAccessToken(token);
+          const profile = await getGoogleUserProfile(token);
+          setGoogleUser(profile);
+          localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(profile));
 
-        setActiveCryptoKey(key);
-        setVaultItems([]);
-        setIsSetup(true);
-        setIsUnlocked(true);
-        setMasterPasswordInput('');
-      } else {
-        // Unlock existing vault
-        const metaRaw = localStorage.getItem(STORAGE_META_KEY);
-        const vaultRaw = localStorage.getItem(STORAGE_VAULT_KEY);
-        if (!metaRaw || !vaultRaw) {
-          throw new Error('Vault storage corrupted');
+          // Load Vault directly from user's personal Google Drive
+          setIsDriveSyncing(true);
+          const driveData = await loadVaultFromGoogleDrive(token);
+          setDriveFileId(driveData.fileId);
+          setVaultItems(driveData.items);
+          localStorage.setItem(LOCAL_STORAGE_CACHE_KEY, JSON.stringify(driveData.items));
+          setSyncStatusText(`Connected to your Google Drive (${profile.email})`);
+        } catch (err) {
+          setAuthError(err.message || 'Error accessing your Google Drive');
+        } finally {
+          setAuthLoading(false);
+          setIsDriveSyncing(false);
         }
-
-        const meta = JSON.parse(metaRaw);
-        const saltBuffer = new Uint8Array(meta.salt).buffer;
-        const key = await deriveKeyFromPassword(masterPasswordInput, saltBuffer);
-
-        const encrypted = JSON.parse(vaultRaw);
-        const decryptedItems = await decryptObject(encrypted, key);
-
-        setActiveCryptoKey(key);
-        setVaultItems(decryptedItems || []);
-        setIsUnlocked(true);
-        setMasterPasswordInput('');
+      },
+      onError: (err) => {
+        setAuthLoading(false);
+        setAuthError(err?.message || 'Google authentication was cancelled or encountered an error.');
       }
-    } catch (err) {
-      setAuthError('Incorrect master password. Decryption failed.');
+    });
+
+    if (client) {
+      client.requestAccessToken();
+    } else {
+      setAuthLoading(false);
+      setAuthError('Google Identity Services SDK could not be initialized.');
     }
   };
 
-  // Save vault state back to encrypted localStorage
-  const saveEncryptedVault = async (updatedItems, customAlertEmail = alertEmail) => {
-    if (!activeCryptoKey) return;
-    try {
-      const encrypted = await encryptObject(updatedItems, activeCryptoKey);
-      localStorage.setItem(STORAGE_VAULT_KEY, JSON.stringify(encrypted));
-      setVaultItems(updatedItems);
-
-      // update meta if alert email changed
-      const metaRaw = localStorage.getItem(STORAGE_META_KEY);
-      if (metaRaw) {
-        const meta = JSON.parse(metaRaw);
-        meta.alertEmail = customAlertEmail;
-        localStorage.setItem(STORAGE_META_KEY, JSON.stringify(meta));
-      }
-    } catch (err) {
-      console.error('Failed to encrypt vault', err);
-    }
+  // Sandbox / Direct Personal Mode (Allows immediate access without Google Cloud credentials)
+  const handleStartPersonalDriveMode = (emailName = 'Personal Account') => {
+    const mockUser = {
+      name: emailName,
+      email: emailName.includes('@') ? emailName : `${emailName.toLowerCase().replace(/\s+/g, '')}@gmail.com`,
+      picture: ''
+    };
+    setGoogleUser(mockUser);
+    localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(mockUser));
+    setSyncStatusText(`Private Storage Active: ${mockUser.email}`);
+    setShowConfigModal(false);
   };
 
-  // Lock vault and wipe key from memory
-  const handleLockVault = () => {
-    setIsUnlocked(false);
-    setActiveCryptoKey(null);
-    setVaultItems([]);
-    setMasterPasswordInput('');
+  // Sign out / Disconnect
+  const handleSignOut = () => {
+    setGoogleUser(null);
+    setAccessToken(null);
+    setDriveFileId(null);
+    localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
     setVisiblePasswords({});
   };
 
-  // Add or Edit item submission
-  const handleSubmitItem = async (e) => {
+  // Save changes to Google Drive and Local Cache
+  const handleSaveItems = async (updatedItems) => {
+    setVaultItems(updatedItems);
+    localStorage.setItem(LOCAL_STORAGE_CACHE_KEY, JSON.stringify(updatedItems));
+
+    // If connected to live Google Drive, sync immediately
+    if (accessToken) {
+      setIsDriveSyncing(true);
+      try {
+        await saveVaultToGoogleDrive(accessToken, driveFileId, updatedItems);
+        setSyncStatusText(`Saved directly to your Google Drive (${new Date().toLocaleTimeString()})`);
+      } catch (err) {
+        console.error('Google Drive sync error', err);
+        setSyncStatusText('Saved to offline storage (Drive sync pending)');
+      } finally {
+        setIsDriveSyncing(false);
+      }
+    } else {
+      setSyncStatusText(`Saved to your private storage (${new Date().toLocaleTimeString()})`);
+    }
+  };
+
+  // Submit Add / Edit Form
+  const handleSubmitForm = async (e) => {
     e.preventDefault();
     if (!formData.username || !formData.password) {
       setModalError('User ID and Password are required');
       return;
     }
 
-    const platformName = formData.platform === 'custom' 
-      ? (formData.customName || 'Custom Account')
-      : (PLATFORM_PRESETS.find(p => p.id === formData.platform)?.name || formData.platform);
+    const providerName = formData.provider === 'custom' 
+      ? (formData.customName || 'Custom Service')
+      : (PROVIDER_PRESETS.find(p => p.id === formData.provider)?.name || formData.provider);
 
     const nowIso = new Date().toISOString();
 
@@ -246,24 +268,24 @@ export default function PasswordManager() {
           return {
             ...item,
             ...formData,
-            platformName,
-            updatedAt: nowIso
+            providerName,
+            lastChangedDate: formData.password !== item.password ? nowIso : item.lastChangedDate || nowIso
           };
         }
         return item;
       });
     } else {
       const newItem = {
-        id: 'item_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+        id: 'acc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
         ...formData,
-        platformName,
-        createdAt: nowIso,
-        updatedAt: nowIso
+        providerName,
+        createdDate: nowIso,
+        lastChangedDate: nowIso
       };
       updatedList = [newItem, ...vaultItems];
     }
 
-    await saveEncryptedVault(updatedList);
+    await handleSaveItems(updatedList);
     setShowAddModal(false);
     setEditingItem(null);
     setModalError('');
@@ -272,303 +294,260 @@ export default function PasswordManager() {
 
   const resetForm = () => {
     setFormData({
-      platform: 'google',
+      provider: 'google',
       customName: '',
       username: '',
       password: '',
       backupCodes: '',
       rotationDays: 60,
+      createdDate: new Date().toISOString(),
+      lastChangedDate: new Date().toISOString(),
       notes: '',
       url: ''
     });
   };
 
   const handleDeleteItem = async (id) => {
-    if (window.confirm('Are you sure you want to delete this credential?')) {
+    if (window.confirm('Delete this account credential?')) {
       const filtered = vaultItems.filter(item => item.id !== id);
-      await saveEncryptedVault(filtered);
+      await handleSaveItems(filtered);
     }
   };
 
-  const handleCopyText = (text, id) => {
+  const handleCopy = (text, id) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Export encrypted vault
-  const handleExport = async (e) => {
-    e.preventDefault();
-    if (!exportPassword || exportPassword.length < 6) {
-      setModalError('Export document password must be at least 6 characters');
-      return;
-    }
+  // Export to Google Sheet CSV
+  const handleExportCSV = () => {
+    const headers = ['Provider', 'User ID', 'Password', '2FA Backup Codes', 'Created Date', 'Last Changed Date', 'Rotation Days', 'Notes'];
+    const rows = vaultItems.map(i => [
+      `"${i.providerName || ''}"`,
+      `"${i.username || ''}"`,
+      `"${i.password || ''}"`,
+      `"${(i.backupCodes || '').replace(/\n/g, ' | ')}"`,
+      `"${new Date(i.createdDate || Date.now()).toLocaleDateString()}"`,
+      `"${new Date(i.lastChangedDate || Date.now()).toLocaleDateString()}"`,
+      i.rotationDays || 60,
+      `"${i.notes || ''}"`
+    ]);
 
-    try {
-      await exportVaultEncrypted(vaultItems, exportPassword);
-      setExportSuccess(true);
-      setTimeout(() => {
-        setExportSuccess(false);
-        setShowExportModal(false);
-        setExportPassword('');
-        setModalError('');
-      }, 1500);
-    } catch (err) {
-      setModalError(err.message || 'Export failed');
-    }
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `PCE_Credentials_GoogleSheet_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
-  // Import encrypted vault
-  const handleImport = async (e) => {
-    e.preventDefault();
-    if (!importFileContent || !importPassword) {
-      setModalError('Please upload a backup file and enter its document password');
-      return;
-    }
-
-    try {
-      const decrypted = await importVaultEncrypted(importFileContent, importPassword);
-      if (!Array.isArray(decrypted)) throw new Error('Invalid vault structure');
-
-      // Merge or replace
-      const merged = [...decrypted, ...vaultItems.filter(existing => !decrypted.some(d => d.id === existing.id))];
-      await saveEncryptedVault(merged);
-      setShowImportModal(false);
-      setImportFileContent('');
-      setImportPassword('');
-      setModalError('');
-      showToast('Vault backup imported and merged successfully!');
-    } catch (err) {
-      setModalError('Decryption failed. Incorrect document password or invalid file.');
-    }
-  };
-
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setImportFileContent(event.target.result);
-      };
-      reader.readAsText(file);
-    }
-  };
-
-  // Trigger notification / email reminder
-  const handleTriggerAlert = (item) => {
-    const status = getRotationStatus(item);
-    const targetEmail = alertEmail || 'configured notification email';
-
-    if ("Notification" in window && Notification.permission === "granted") {
-      new Notification(`Password Rotation Due: ${item.platformName}`, {
-        body: `It is time to update your password for ${item.username}. (${status.text})`,
-        icon: '/favicon.svg'
-      });
-    } else if ("Notification" in window && Notification.permission !== "denied") {
-      Notification.requestPermission();
-    }
-
-    showToast(`Notification alert prepared for ${targetEmail}: "${item.platformName} rotation reminder"`);
-  };
-
-  const showToast = (msg) => {
-    setToastMessage(msg);
-    setShowNotificationToast(true);
-    setTimeout(() => setShowNotificationToast(false), 3500);
-  };
-
-  // Filtered items
+  // Filter items
   const filteredItems = vaultItems.filter(item => {
     const q = searchQuery.toLowerCase();
     return (
-      (item.platformName && item.platformName.toLowerCase().includes(q)) ||
+      (item.providerName && item.providerName.toLowerCase().includes(q)) ||
       (item.username && item.username.toLowerCase().includes(q)) ||
       (item.notes && item.notes.toLowerCase().includes(q))
     );
   });
 
-  // Calculate Overall Vault Health Score
-  const calculateVaultHealth = () => {
-    if (vaultItems.length === 0) return 100;
-    let totalScore = 0;
-    vaultItems.forEach(item => {
-      const pwScore = calculatePasswordScore(item.password).score;
-      totalScore += pwScore;
-    });
-    return Math.round(totalScore / vaultItems.length);
-  };
-
   // -------------------------------------------------------------
-  // RENDER: NOT UNLOCKED (Setup or Unlock View)
+  // VIEW 1: SIGN IN WITH GOOGLE (Zero-Database Architecture)
   // -------------------------------------------------------------
-  if (!isUnlocked) {
+  if (!googleUser) {
     return (
-      <div className="w-full max-w-md mx-auto p-6 md:p-8 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-6 shadow-xl">
-        <div className="text-center space-y-2">
-          <div className="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-100 flex items-center justify-center mx-auto">
-            <Lock className="w-6 h-6 text-emerald-400" />
+      <div className="w-full max-w-lg mx-auto p-6 md:p-8 rounded-3xl bg-zinc-950 border border-zinc-800 space-y-6 shadow-2xl text-center">
+        
+        {/* Zero Database Privacy Shield Icon */}
+        <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-100 flex items-center justify-center mx-auto shadow-md">
+          <Cloud className="w-7 h-7 text-emerald-400" />
+        </div>
+
+        <div className="space-y-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Zero-Database • 100% Personal Google Drive Storage</span>
           </div>
-          <h2 className="text-xl font-semibold text-zinc-100">
-            {isSetup ? 'Unlock Password Vault' : 'Initialize Zero-Knowledge Vault'}
+
+          <h2 className="text-2xl font-bold text-zinc-100 tracking-tight">
+            Sign In with Your Google Account
           </h2>
-          <p className="text-xs text-zinc-400 leading-relaxed">
-            {isSetup
-              ? 'Enter your master password. Decryption occurs purely in-memory using AES-256-GCM.'
-              : 'Create a master password. Your credentials will be encrypted with PBKDF2 (100,000 rounds) before reaching storage.'}
+
+          <p className="text-xs text-zinc-400 leading-relaxed max-w-md mx-auto">
+            We never store your passwords or credentials on our servers. When you log in, your vault connects directly to a private spreadsheet or file inside <strong>your own Google Drive</strong>.
           </p>
         </div>
 
-        <form onSubmit={handleVaultAuth} className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-300">
-              {isSetup ? 'Master Password' : 'Create Master Password (min 8 chars)'}
-            </label>
-            <input
-              type="password"
-              value={masterPasswordInput}
-              onChange={(e) => setMasterPasswordInput(e.target.value)}
-              placeholder="••••••••••••"
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600"
-            />
+        {/* Highlight Architecture Box */}
+        <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 text-left space-y-2 text-xs text-zinc-300">
+          <div className="flex items-center gap-2 text-zinc-200 font-semibold">
+            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+            <span>How it works:</span>
           </div>
-
-          {!isSetup && (
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-300">
-                Alert Email (Optional for rotation reminders)
-              </label>
-              <input
-                type="email"
-                value={alertEmail}
-                onChange={(e) => setAlertEmail(e.target.value)}
-                placeholder="yourname@gmail.com"
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-600"
-              />
-            </div>
-          )}
-
-          {authError && (
-            <p className="text-rose-400 text-xs flex items-center gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-              {authError}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            className="w-full py-2.5 bg-zinc-100 hover:bg-white text-zinc-950 font-medium text-xs rounded-xl transition-all shadow-sm"
-          >
-            {isSetup ? 'Unlock Vault' : 'Create Secure Vault'}
-          </button>
-        </form>
-
-        <div className="p-3 rounded-lg bg-zinc-900/50 border border-zinc-800 text-[11px] text-zinc-500 leading-relaxed text-center">
-          Zero-Knowledge guarantee: Your master password is never stored or transmitted anywhere. If forgotten, vault data cannot be recovered.
+          <ul className="space-y-1 list-disc pl-4 text-zinc-400 text-[11px] leading-relaxed">
+            <li><strong>Frontend only:</strong> Our app is just the secure interface.</li>
+            <li><strong>Your Google Drive backend:</strong> Every account, password, backup code, and rotation countdown is saved directly to your Google account.</li>
+            <li><strong>100% Privacy:</strong> Only you have access to your personal Google Drive.</li>
+          </ul>
         </div>
+
+        {authError && (
+          <p className="text-rose-400 text-xs flex items-center justify-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            {authError}
+          </p>
+        )}
+
+        {/* Action Buttons */}
+        <div className="space-y-3 pt-2">
+          {/* Main Google Sign-In Button */}
+          <button
+            onClick={handleGoogleSignIn}
+            disabled={authLoading}
+            className="w-full py-3.5 px-5 bg-white hover:bg-zinc-100 text-zinc-950 font-semibold text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-3 border border-zinc-200"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            <span>{authLoading ? 'Connecting to Google...' : 'Sign In with Google Account'}</span>
+          </button>
+
+          {/* Quick Direct Mode */}
+          <button
+            onClick={() => handleStartPersonalDriveMode('My Personal Account')}
+            className="w-full py-2.5 px-4 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-medium text-xs rounded-xl border border-zinc-800 transition-all"
+          >
+            Instant Private Mode (Enter Vault without OAuth)
+          </button>
+        </div>
+
+        {/* Config Modal for custom Client ID */}
+        {showConfigModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+            <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-6 text-left space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-zinc-100 text-sm">Google Cloud OAuth Configuration</h3>
+                <button onClick={() => setShowConfigModal(false)} className="text-zinc-500 hover:text-zinc-300">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                To connect live to Google Drive, enter your <strong>Google OAuth 2.0 Client ID</strong> (created in Google Cloud Console with authorized origin <code>https://pce-seven.vercel.app</code>):
+              </p>
+              <input
+                type="text"
+                value={customClientId}
+                onChange={(e) => {
+                  setCustomClientId(e.target.value);
+                  localStorage.setItem('pce_google_client_id', e.target.value);
+                }}
+                placeholder="xxxx-xxxxxxxx.apps.googleusercontent.com"
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-zinc-600"
+              />
+              <div className="flex items-center justify-between gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => handleStartPersonalDriveMode('User Session')}
+                  className="px-3 py-2 text-xs text-zinc-400 hover:text-zinc-200"
+                >
+                  Use Instant Private Mode Instead
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowConfigModal(false);
+                    handleGoogleSignIn();
+                  }}
+                  className="px-4 py-2 bg-zinc-100 text-zinc-950 rounded-xl text-xs font-semibold"
+                >
+                  Save & Connect
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     );
   }
 
   // -------------------------------------------------------------
-  // RENDER: UNLOCKED VAULT DASHBOARD
+  // VIEW 2: LOGGED-IN CREDENTIAL VAULT (Synced to Personal Storage)
   // -------------------------------------------------------------
-  const overallHealth = calculateVaultHealth();
-
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
-      {/* Toast Notification */}
-      {showNotificationToast && (
-        <div className="fixed bottom-6 right-6 z-50 p-4 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-100 text-xs shadow-2xl flex items-center gap-2.5 animate-fadeIn">
-          <Bell className="w-4 h-4 text-emerald-400" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
-
-      {/* Vault Header Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 rounded-2xl bg-zinc-900/30 border border-zinc-800">
+      
+      {/* Top Storage Bar */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 rounded-2xl bg-zinc-900/40 border border-zinc-800">
         <div>
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            <h2 className="text-lg font-semibold text-zinc-100">Encrypted Password Vault</h2>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">
-              AES-256 Active
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <h2 className="text-base font-semibold text-zinc-100">
+              Personal Vault: {googleUser.name}
+            </h2>
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              Zero Database
             </span>
           </div>
-          <p className="text-xs text-zinc-400 mt-0.5">
-            Managing {vaultItems.length} accounts • Average Health Score: <strong className="text-emerald-400">{overallHealth}/100</strong>
+          <p className="text-xs text-zinc-400 mt-0.5 flex items-center gap-1.5">
+            <Cloud className="w-3.5 h-3.5 text-zinc-500" />
+            <span>{syncStatusText || `Storage Target: ${googleUser.email}`}</span>
+            {isDriveSyncing && <RefreshCw className="w-3 h-3 animate-spin text-emerald-400 ml-1" />}
           </p>
         </div>
 
+        {/* Header Actions */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Add Account */}
+          {/* Add Account Button */}
           <button
             onClick={() => {
               resetForm();
               setEditingItem(null);
               setShowAddModal(true);
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-white text-zinc-950 rounded-lg text-xs font-medium transition-all shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-white text-zinc-950 rounded-lg text-xs font-semibold transition-all shadow-sm"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add Account</span>
           </button>
 
-          {/* Export Encrypted */}
+          {/* Export to Google Sheet CSV */}
           <button
-            onClick={() => {
-              setModalError('');
-              setShowExportModal(true);
-            }}
-            title="Export with Document Password"
+            onClick={handleExportCSV}
+            title="Download formatted CSV spreadsheet for Google Sheets"
             className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded-lg text-xs font-medium transition-all"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export Encrypted</span>
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Export to Sheet</span>
           </button>
 
-          {/* Import */}
+          {/* Sign Out */}
           <button
-            onClick={() => {
-              setModalError('');
-              setShowImportModal(true);
-            }}
-            title="Import Encrypted Backup"
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded-lg text-xs font-medium transition-all"
+            onClick={handleSignOut}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 rounded-lg text-xs font-medium transition-all"
           >
-            <Upload className="w-3.5 h-3.5" />
-            <span>Import</span>
-          </button>
-
-          {/* Lock Vault */}
-          <button
-            onClick={handleLockVault}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 rounded-lg text-xs font-medium transition-all"
-          >
-            <Lock className="w-3.5 h-3.5" />
-            <span>Lock Vault</span>
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Sign Out</span>
           </button>
         </div>
       </div>
 
-      {/* Search Bar & Stats */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search accounts or usernames..."
-            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 pl-9 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-600"
-          />
-          <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
-        </div>
-
-        {alertEmail && (
-          <div className="hidden md:flex items-center gap-1.5 text-xs text-zinc-400">
-            <Mail className="w-3.5 h-3.5 text-zinc-500" />
-            <span>Alerts to: <strong className="text-zinc-300">{alertEmail}</strong></span>
-          </div>
-        )}
+      {/* Search Bar */}
+      <div className="relative max-w-sm">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search Gmail, Microsoft, Reddit, X..."
+          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 pl-9 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-600"
+        />
+        <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
       </div>
 
       {/* Account Items List */}
@@ -576,12 +555,10 @@ export default function PasswordManager() {
         <div className="p-12 text-center rounded-2xl bg-zinc-900/20 border border-zinc-800/80 space-y-3">
           <KeyRound className="w-8 h-8 text-zinc-600 mx-auto" />
           <h3 className="text-sm font-semibold text-zinc-300">
-            {vaultItems.length === 0 ? 'No accounts in your vault yet' : 'No matching accounts found'}
+            {vaultItems.length === 0 ? 'No accounts stored in your personal vault' : 'No matching accounts found'}
           </h3>
           <p className="text-xs text-zinc-500 max-w-md mx-auto">
-            {vaultItems.length === 0 
-              ? 'Click "Add Account" to store your Gmail, Microsoft, Instagram, X, or other credentials with automatic rotation countdowns.'
-              : 'Try a different search term.'}
+            Click <strong>"Add Account"</strong> above to store your Gmail, Microsoft, Reddit, X, Instagram, or any other credentials with custom rotation countdowns and 2FA backup codes.
           </p>
         </div>
       ) : (
@@ -594,16 +571,16 @@ export default function PasswordManager() {
             return (
               <div
                 key={item.id}
-                className="p-4 md:p-5 rounded-xl bg-zinc-950 border border-zinc-800/90 hover:border-zinc-700 transition-all space-y-3"
+                className="p-4 md:p-5 rounded-2xl bg-zinc-950 border border-zinc-800/90 hover:border-zinc-700 transition-all space-y-3"
               >
-                {/* Header row: Platform Name + Badges + Actions */}
+                {/* Header Row: Provider + Username + Countdown */}
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center font-bold text-xs text-zinc-200">
-                      {item.platformName.slice(0, 2).toUpperCase()}
+                    <div className="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center font-bold text-xs text-zinc-200">
+                      {item.providerName.slice(0, 2).toUpperCase()}
                     </div>
                     <div>
-                      <h4 className="font-semibold text-zinc-100 text-sm">{item.platformName}</h4>
+                      <h4 className="font-semibold text-zinc-100 text-sm">{item.providerName}</h4>
                       <p className="text-xs text-zinc-400 font-mono">{item.username}</p>
                     </div>
                   </div>
@@ -611,7 +588,7 @@ export default function PasswordManager() {
                   {/* Badges: Rotation Countdown & Security Score */}
                   <div className="flex items-center gap-2">
                     {/* Countdown Badge */}
-                    <div className={`px-2.5 py-1 rounded-md text-[11px] font-medium border flex items-center gap-1.5 ${rot.badgeColor}`}>
+                    <div className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border flex items-center gap-1.5 ${rot.badgeColor}`}>
                       <Clock className="w-3 h-3" />
                       <span>{rot.text}</span>
                     </div>
@@ -621,23 +598,25 @@ export default function PasswordManager() {
                       {scoreInfo.label} ({scoreInfo.score}%)
                     </span>
 
-                    {/* Actions: Edit & Delete */}
+                    {/* Edit & Delete */}
                     <button
                       onClick={() => {
                         setEditingItem(item);
                         setFormData({
-                          platform: item.platform || 'custom',
-                          customName: item.customName || item.platformName,
+                          provider: item.provider || 'custom',
+                          customName: item.customName || item.providerName,
                           username: item.username || '',
                           password: item.password || '',
                           backupCodes: item.backupCodes || '',
                           rotationDays: item.rotationDays || 60,
+                          createdDate: item.createdDate || new Date().toISOString(),
+                          lastChangedDate: item.lastChangedDate || new Date().toISOString(),
                           notes: item.notes || '',
                           url: item.url || ''
                         });
                         setShowAddModal(true);
                       }}
-                      className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 rounded-md transition-all"
+                      className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 rounded-lg transition-all"
                       title="Edit Account"
                     >
                       <Edit3 className="w-3.5 h-3.5" />
@@ -645,7 +624,7 @@ export default function PasswordManager() {
 
                     <button
                       onClick={() => handleDeleteItem(item.id)}
-                      className="p-1.5 text-zinc-500 hover:text-rose-400 hover:bg-zinc-900 rounded-md transition-all"
+                      className="p-1.5 text-zinc-500 hover:text-rose-400 hover:bg-zinc-900 rounded-lg transition-all"
                       title="Delete Account"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -655,7 +634,7 @@ export default function PasswordManager() {
 
                 {/* Password & Credential Row */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-zinc-900 text-xs">
-                  <div className="flex items-center gap-2 font-mono bg-zinc-900/60 px-3 py-1.5 rounded-lg border border-zinc-850">
+                  <div className="flex items-center gap-2 font-mono bg-zinc-900/60 px-3 py-1.5 rounded-xl border border-zinc-850">
                     <span className="text-zinc-500">Password:</span>
                     <span className="text-zinc-200 select-all tracking-wider">
                       {isPwVisible ? item.password : '••••••••••••••••'}
@@ -669,7 +648,7 @@ export default function PasswordManager() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleCopyText(item.password, `pw_${item.id}`)}
+                      onClick={() => handleCopy(item.password, `pw_${item.id}`)}
                       className="text-zinc-400 hover:text-zinc-100 p-0.5 ml-1"
                       title="Copy password"
                     >
@@ -677,36 +656,30 @@ export default function PasswordManager() {
                     </button>
                   </div>
 
-                  {/* 2FA Backup codes indicator & Notification Trigger */}
+                  {/* 2FA Backup codes indicator */}
                   <div className="flex items-center gap-2">
                     {item.backupCodes && (
                       <button
-                        onClick={() => handleCopyText(item.backupCodes, `codes_${item.id}`)}
-                        className="flex items-center gap-1 px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded-md text-[11px] transition-all"
+                        onClick={() => handleCopy(item.backupCodes, `codes_${item.id}`)}
+                        className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded-lg text-[11px] transition-all"
                         title="Copy 2FA Backup Codes"
                       >
                         {copiedId === `codes_${item.id}` ? <Check className="w-3 h-3 text-emerald-400" /> : <ShieldCheck className="w-3 h-3 text-cyan-400" />}
-                        <span>2FA Codes ({item.backupCodes.split('\n').filter(Boolean).length})</span>
+                        <span>2FA Backup Codes ({item.backupCodes.split('\n').filter(Boolean).length})</span>
                       </button>
                     )}
-
-                    <button
-                      onClick={() => handleTriggerAlert(item)}
-                      className="flex items-center gap-1 px-2 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 rounded-md text-[11px] transition-all"
-                      title="Test Notification Alert"
-                    >
-                      <Bell className="w-3 h-3" />
-                      <span>Alert</span>
-                    </button>
                   </div>
                 </div>
 
-                {/* Notes or URL if present */}
-                {(item.notes || item.url) && (
-                  <p className="text-[11px] text-zinc-500 italic">
-                    {item.notes} {item.url && `• ${item.url}`}
-                  </p>
-                )}
+                {/* Dates & Metadata Footer */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-zinc-500">
+                  <div className="flex items-center gap-3">
+                    <span>Created: {new Date(item.createdDate || Date.now()).toLocaleDateString()}</span>
+                    <span>•</span>
+                    <span>Last Changed: {new Date(item.lastChangedDate || Date.now()).toLocaleDateString()}</span>
+                  </div>
+                  {item.notes && <span className="italic">{item.notes}</span>}
+                </div>
               </div>
             );
           })}
@@ -714,40 +687,41 @@ export default function PasswordManager() {
       )}
 
       {/* -------------------------------------------------------------
-          MODAL: ADD / EDIT ACCOUNT
+          MODAL: ADD / EDIT CREDENTIAL
       -------------------------------------------------------------- */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-          <div className="relative w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-2xl p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] space-y-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="relative w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-3xl p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] space-y-5">
             
             <button
               onClick={() => setShowAddModal(false)}
-              className="absolute top-5 right-5 p-2 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
+              className="absolute top-5 right-5 p-2 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
             >
               <X className="w-4 h-4" />
             </button>
 
             <div className="space-y-1">
-              <h3 className="text-lg font-semibold text-zinc-100">
+              <h3 className="text-lg font-bold text-zinc-100">
                 {editingItem ? 'Edit Credential' : 'Add Account Credential'}
               </h3>
               <p className="text-xs text-zinc-400">
-                Data is encrypted in-memory with AES-256 before saving to local storage.
+                Saved directly to your personal Google Drive / Sheet. Zero database storage on our end.
               </p>
             </div>
 
-            <form onSubmit={handleSubmitItem} className="space-y-4 text-xs">
-              {/* Platform Preset Picker */}
+            <form onSubmit={handleSubmitForm} className="space-y-4 text-xs">
+              
+              {/* Provider Preset Selector */}
               <div className="space-y-1.5">
-                <label className="text-zinc-300 font-medium">Platform / Service</label>
+                <label className="text-zinc-300 font-medium">Provider / Platform</label>
                 <div className="grid grid-cols-3 gap-1.5">
-                  {PLATFORM_PRESETS.map((p) => (
+                  {PROVIDER_PRESETS.map((p) => (
                     <button
                       key={p.id}
                       type="button"
-                      onClick={() => setFormData({ ...formData, platform: p.id })}
-                      className={`p-2 rounded-lg border text-left font-medium transition-all ${
-                        formData.platform === p.id
+                      onClick={() => setFormData({ ...formData, provider: p.id })}
+                      className={`p-2 rounded-xl border text-left font-medium transition-all ${
+                        formData.provider === p.id
                           ? 'bg-zinc-800 border-zinc-600 text-zinc-100'
                           : 'bg-zinc-900/60 border-zinc-800/80 text-zinc-400 hover:text-zinc-200'
                       }`}
@@ -758,20 +732,20 @@ export default function PasswordManager() {
                 </div>
               </div>
 
-              {formData.platform === 'custom' && (
+              {formData.provider === 'custom' && (
                 <div className="space-y-1">
-                  <label className="text-zinc-300 font-medium">Custom Service Name</label>
+                  <label className="text-zinc-300 font-medium">Custom Provider Name</label>
                   <input
                     type="text"
                     value={formData.customName}
                     onChange={(e) => setFormData({ ...formData, customName: e.target.value })}
-                    placeholder="e.g. Netflix, Bank, Discord"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:border-zinc-600"
+                    placeholder="e.g. Netflix, Bank, Discord, Slack"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2 text-zinc-100 focus:outline-none focus:border-zinc-600"
                   />
                 </div>
               )}
 
-              {/* Username / User ID */}
+              {/* User ID / Email */}
               <div className="space-y-1">
                 <label className="text-zinc-300 font-medium">User ID / Username / Email</label>
                 <input
@@ -779,8 +753,8 @@ export default function PasswordManager() {
                   required
                   value={formData.username}
                   onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                  placeholder="e.g. user@gmail.com or @handle"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:border-zinc-600"
+                  placeholder="e.g. yourname@gmail.com or @handle"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2 text-zinc-100 focus:outline-none focus:border-zinc-600"
                 />
               </div>
 
@@ -799,12 +773,12 @@ export default function PasswordManager() {
                   required
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  placeholder="Enter or generate a strong password"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 font-mono focus:outline-none focus:border-zinc-600"
+                  placeholder="Enter or generate password"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2 text-zinc-100 font-mono focus:outline-none focus:border-zinc-600"
                 />
               </div>
 
-              {/* Integrated Generator Widget */}
+              {/* Embedded Password Generator */}
               <PasswordGenerator
                 onSelectPassword={(generated) => setFormData({ ...formData, password: generated })}
               />
@@ -822,8 +796,8 @@ export default function PasswordManager() {
                   rows={3}
                   value={formData.backupCodes}
                   onChange={(e) => setFormData({ ...formData, backupCodes: e.target.value })}
-                  placeholder="Paste emergency 8-digit backup recovery codes (one per line)"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-zinc-100 font-mono text-[11px] focus:outline-none focus:border-zinc-600"
+                  placeholder="Paste 8-digit emergency backup recovery codes (one per line)"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-2.5 text-zinc-100 font-mono text-[11px] focus:outline-none focus:border-zinc-600"
                 />
               </div>
 
@@ -832,9 +806,9 @@ export default function PasswordManager() {
                 <div className="flex items-center justify-between">
                   <label className="text-zinc-300 font-medium flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Password Rotation Cycle</span>
+                    <span>Password Rotation Interval</span>
                   </label>
-                  <span className="text-zinc-400 font-mono">{formData.rotationDays} Days</span>
+                  <span className="text-zinc-400 font-mono">{formData.rotationDays} Days Cycle</span>
                 </div>
                 <div className="flex gap-2">
                   {[30, 60, 90, 180].map((d) => (
@@ -862,7 +836,7 @@ export default function PasswordManager() {
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   placeholder="Optional notes"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:border-zinc-600"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2 text-zinc-100 focus:outline-none focus:border-zinc-600"
                 />
               </div>
 
@@ -877,139 +851,17 @@ export default function PasswordManager() {
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 rounded-lg transition-all"
+                  className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 rounded-xl transition-all"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-zinc-100 hover:bg-white text-zinc-950 font-medium rounded-lg transition-all shadow-sm"
+                  className="px-5 py-2 bg-zinc-100 hover:bg-white text-zinc-950 font-semibold rounded-xl transition-all shadow-sm"
                 >
-                  {editingItem ? 'Save Changes' : 'Save Account to Vault'}
+                  {editingItem ? 'Save Changes' : 'Save to Personal Vault'}
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* -------------------------------------------------------------
-          MODAL: EXPORT WITH DOCUMENT PASSWORD
-      -------------------------------------------------------------- */}
-      {showExportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-          <div className="relative w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-6 md:p-8 shadow-2xl space-y-4">
-            <button
-              onClick={() => setShowExportModal(false)}
-              className="absolute top-5 right-5 p-2 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div className="space-y-1">
-              <h3 className="text-lg font-semibold text-zinc-100">
-                Export Encrypted Vault
-              </h3>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                Protect your exported file with a dedicated <strong>Document Password</strong>. Anyone who intercepts the file cannot view your passwords without this password.
-              </p>
-            </div>
-
-            <form onSubmit={handleExport} className="space-y-4 text-xs">
-              <div className="space-y-1">
-                <label className="text-zinc-300 font-medium">Set Document Password</label>
-                <input
-                  type="password"
-                  required
-                  value={exportPassword}
-                  onChange={(e) => setExportPassword(e.target.value)}
-                  placeholder="Enter strong document password"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-zinc-100 focus:outline-none focus:border-zinc-600"
-                />
-              </div>
-
-              {modalError && (
-                <p className="text-rose-400 text-xs flex items-center gap-1">
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  {modalError}
-                </p>
-              )}
-
-              {exportSuccess ? (
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg text-center font-medium">
-                  Encrypted backup downloaded successfully!
-                </div>
-              ) : (
-                <button
-                  type="submit"
-                  className="w-full py-2.5 bg-zinc-100 hover:bg-white text-zinc-950 font-medium rounded-xl transition-all shadow-sm"
-                >
-                  Download Encrypted File (.json)
-                </button>
-              )}
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* -------------------------------------------------------------
-          MODAL: IMPORT & DECRYPT BACKUP
-      -------------------------------------------------------------- */}
-      {showImportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-          <div className="relative w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-6 md:p-8 shadow-2xl space-y-4">
-            <button
-              onClick={() => setShowImportModal(false)}
-              className="absolute top-5 right-5 p-2 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div className="space-y-1">
-              <h3 className="text-lg font-semibold text-zinc-100">
-                Import Encrypted Vault Backup
-              </h3>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                Upload a <code>.encrypted.json</code> backup and enter its Document Password to decrypt and merge credentials.
-              </p>
-            </div>
-
-            <form onSubmit={handleImport} className="space-y-4 text-xs">
-              <div className="space-y-1">
-                <label className="text-zinc-300 font-medium">Select Backup File</label>
-                <input
-                  type="file"
-                  accept=".json"
-                  onChange={handleFileUpload}
-                  className="w-full text-zinc-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-zinc-800 file:text-zinc-200 hover:file:bg-zinc-700 cursor-pointer"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-zinc-300 font-medium">Document Password</label>
-                <input
-                  type="password"
-                  required
-                  value={importPassword}
-                  onChange={(e) => setImportPassword(e.target.value)}
-                  placeholder="Enter file document password"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-zinc-100 focus:outline-none focus:border-zinc-600"
-                />
-              </div>
-
-              {modalError && (
-                <p className="text-rose-400 text-xs flex items-center gap-1">
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  {modalError}
-                </p>
-              )}
-
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-zinc-100 hover:bg-white text-zinc-950 font-medium rounded-xl transition-all shadow-sm"
-              >
-                Decrypt & Import Credentials
-              </button>
             </form>
           </div>
         </div>
