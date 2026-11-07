@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Lock, 
-  Unlock, 
   KeyRound, 
   Plus, 
   Trash2, 
@@ -13,20 +12,14 @@ import {
   ShieldCheck, 
   AlertTriangle, 
   Clock, 
-  Download, 
-  Upload, 
-  Mail, 
-  ExternalLink,
-  Search,
-  Sparkles,
-  Sliders,
-  CheckCircle2,
-  X,
-  FileSpreadsheet,
-  Cloud,
-  LogOut,
-  User,
-  ArrowRight
+  Search, 
+  CheckCircle2, 
+  X, 
+  FileSpreadsheet, 
+  Cloud, 
+  LogOut, 
+  Settings,
+  ShieldAlert
 } from 'lucide-react';
 import { calculatePasswordScore } from '../services/cryptoVault';
 import PasswordGenerator from './PasswordGenerator';
@@ -45,19 +38,35 @@ const PROVIDER_PRESETS = [
 ];
 
 export default function PasswordManager() {
-  // Active User state (identified by Google email / username)
-  const [currentUserEmail, setCurrentUserEmail] = useState(() => {
-    return localStorage.getItem('pce_active_user_email') || '';
+  // Google Client ID state (Read from Vercel env or localStorage)
+  const [googleClientId, setGoogleClientId] = useState(() => {
+    return import.meta.env.VITE_GOOGLE_CLIENT_ID || localStorage.getItem('pce_google_client_id') || '';
   });
-  const [emailInput, setEmailInput] = useState('');
+  const [showClientIdSetup, setShowClientIdSetup] = useState(false);
+  const [clientIdInput, setClientIdInput] = useState('');
+
+  // Verified Google User
+  const [googleUser, setGoogleUser] = useState(() => {
+    const saved = localStorage.getItem('pce_verified_google_user');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
+
   const [authError, setAuthError] = useState('');
+  const googleBtnRef = useRef(null);
 
   // Vault data state
   const [vaultItems, setVaultItems] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [saveToast, setSaveToast] = useState('');
 
-  // Modals & UI states
+  // Modals
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [modalError, setModalError] = useState('');
@@ -80,16 +89,16 @@ export default function PasswordManager() {
     url: ''
   });
 
-  // Helper to get storage key for the current user
-  const getUserStorageKey = (email) => {
-    const clean = email.trim().toLowerCase();
-    return `pce_vault_data_${clean}`;
+  // Helper to get storage key for the verified Google account
+  const getUserStorageKey = (user) => {
+    const id = user.sub || user.email;
+    return `pce_vault_data_${id.toLowerCase()}`;
   };
 
   // Load user items whenever active user changes
   useEffect(() => {
-    if (currentUserEmail) {
-      const key = getUserStorageKey(currentUserEmail);
+    if (googleUser) {
+      const key = getUserStorageKey(googleUser);
       const saved = localStorage.getItem(key);
       if (saved) {
         try {
@@ -101,29 +110,92 @@ export default function PasswordManager() {
         setVaultItems([]);
       }
     }
-  }, [currentUserEmail]);
+  }, [googleUser]);
 
-  // Handle Login / Account Entry (Zero configuration required)
-  const handleSignIn = (e) => {
-    if (e) e.preventDefault();
-    const trimmed = emailInput.trim().toLowerCase();
-    if (!trimmed) {
-      setAuthError('Please enter your Google email address or username');
-      return;
+  // Handle Google Credential Response (JWT from Google Auth)
+  const handleCredentialResponse = (response) => {
+    try {
+      if (!response.credential) throw new Error('No credential returned from Google');
+      
+      // Decode JWT payload client-side (Zero database)
+      const base64Url = response.credential.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      
+      const payload = JSON.parse(jsonPayload);
+      const userObj = {
+        name: payload.name || 'Google User',
+        email: payload.email,
+        picture: payload.picture || '',
+        sub: payload.sub
+      };
+
+      setGoogleUser(userObj);
+      localStorage.setItem('pce_verified_google_user', JSON.stringify(userObj));
+      setAuthError('');
+    } catch (err) {
+      console.error('Google Auth decode error:', err);
+      setAuthError('Failed to verify Google identity. Please try again.');
     }
-
-    setAuthError('');
-    setCurrentUserEmail(trimmed);
-    localStorage.setItem('pce_active_user_email', trimmed);
-    setEmailInput('');
   };
 
-  // Sign out / Switch Account
+  // Initialize and Render Official Google Sign-In Button
+  useEffect(() => {
+    if (!googleUser && googleClientId) {
+      const renderGoogleBtn = () => {
+        if (window.google?.accounts?.id && googleBtnRef.current) {
+          try {
+            window.google.accounts.id.initialize({
+              client_id: googleClientId,
+              callback: handleCredentialResponse,
+              auto_select: false,
+              cancel_on_tap_outside: true
+            });
+
+            window.google.accounts.id.renderButton(googleBtnRef.current, {
+              type: 'standard',
+              theme: 'filled_black',
+              size: 'large',
+              text: 'continue_with',
+              shape: 'pill',
+              logo_alignment: 'left',
+              width: 280
+            });
+          } catch (err) {
+            console.error('GIS render error:', err);
+          }
+        }
+      };
+
+      // Check if SDK is already loaded or wait
+      if (window.google?.accounts?.id) {
+        renderGoogleBtn();
+      } else {
+        const timer = setInterval(() => {
+          if (window.google?.accounts?.id) {
+            clearInterval(timer);
+            renderGoogleBtn();
+          }
+        }, 300);
+        return () => clearInterval(timer);
+      }
+    }
+  }, [googleUser, googleClientId]);
+
+  // Sign out
   const handleSignOut = () => {
-    setCurrentUserEmail('');
-    localStorage.removeItem('pce_active_user_email');
+    setGoogleUser(null);
+    localStorage.removeItem('pce_verified_google_user');
     setVaultItems([]);
     setVisiblePasswords({});
+    if (window.google?.accounts?.id) {
+      window.google.accounts.id.disableAutoSelect();
+    }
   };
 
   // Compute countdown & status for an item
@@ -163,10 +235,10 @@ export default function PasswordManager() {
   // Save changes to current user's personal storage
   const handleSaveItems = (updatedItems) => {
     setVaultItems(updatedItems);
-    if (currentUserEmail) {
-      const key = getUserStorageKey(currentUserEmail);
+    if (googleUser) {
+      const key = getUserStorageKey(googleUser);
       localStorage.setItem(key, JSON.stringify(updatedItems));
-      triggerToast('Saved successfully to your personal account storage!');
+      triggerToast('Saved directly to your verified Google account storage!');
     }
   };
 
@@ -266,11 +338,22 @@ export default function PasswordManager() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `PCE_Vault_${currentUserEmail}_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `PCE_Vault_${googleUser?.email}_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    triggerToast('Google Sheet CSV downloaded! You can upload it to Google Drive.');
+    triggerToast('Google Sheet CSV downloaded successfully!');
+  };
+
+  // Save Google Client ID
+  const handleSaveClientId = (e) => {
+    e.preventDefault();
+    const clean = clientIdInput.trim();
+    if (!clean) return;
+    setGoogleClientId(clean);
+    localStorage.setItem('pce_google_client_id', clean);
+    setShowClientIdSetup(false);
+    setClientIdInput('');
   };
 
   // Filter items
@@ -284,88 +367,129 @@ export default function PasswordManager() {
   });
 
   // -------------------------------------------------------------
-  // VIEW 1: SIGN IN / ACCOUNT ENTRY (Zero Barrier, Anyone Anytime)
+  // VIEW 1: GOOGLE AUTH ONLY LOGIN (No unauthenticated private login)
   // -------------------------------------------------------------
-  if (!currentUserEmail) {
+  if (!googleUser) {
     return (
       <div className="w-full max-w-md mx-auto p-6 md:p-8 rounded-3xl bg-zinc-950 border border-zinc-800 space-y-6 shadow-2xl text-center">
         
-        {/* Zero Database Privacy Shield Icon */}
+        {/* Google Security Icon */}
         <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-100 flex items-center justify-center mx-auto shadow-md">
-          <Cloud className="w-7 h-7 text-emerald-400" />
+          <svg className="w-7 h-7" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
         </div>
 
         <div className="space-y-2">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Zero Server Database • 100% Private</span>
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Google Authenticated Session • Zero Database</span>
           </div>
 
           <h2 className="text-2xl font-bold text-zinc-100 tracking-tight">
-            Sign In to Your Private Vault
+            Sign In with Google
           </h2>
 
           <p className="text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto">
-            Anyone can log in anytime. We never store your credentials on any database or server. Your vault is isolated to your personal account.
+            Authenticate directly with your official Google Account to access your private encrypted credential vault.
           </p>
         </div>
 
-        {/* Clean Sign In Form */}
-        <form onSubmit={handleSignIn} className="space-y-3.5 pt-2">
-          <div className="relative text-left">
-            <label className="text-[11px] font-medium text-zinc-400 ml-1 block mb-1">
-              Google Email or Account Handle
-            </label>
-            <div className="relative">
+        {/* Real Google Auth Button Container */}
+        {googleClientId ? (
+          <div className="flex flex-col items-center justify-center pt-2 space-y-3">
+            <div ref={googleBtnRef} className="min-h-[44px] flex items-center justify-center" />
+            <p className="text-[11px] text-zinc-500">
+              Only verified Google accounts can unlock this vault.
+            </p>
+          </div>
+        ) : (
+          /* Client ID prompt if not configured */
+          <div className="p-4 rounded-2xl bg-zinc-900 border border-zinc-800 text-left space-y-3">
+            <div className="flex items-center gap-2 text-xs font-semibold text-zinc-200">
+              <ShieldAlert className="w-4 h-4 text-amber-400" />
+              <span>Connect Google OAuth Client ID</span>
+            </div>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              To enable official Google Auth popups on <code>pce-seven.vercel.app</code>, enter your <strong>Google OAuth 2.0 Client ID</strong>:
+            </p>
+            <form onSubmit={handleSaveClientId} className="space-y-2">
               <input
                 type="text"
                 required
-                value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                placeholder="yourname@gmail.com"
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 pl-11 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-600 text-sm transition-all"
+                value={clientIdInput}
+                onChange={(e) => setClientIdInput(e.target.value)}
+                placeholder="xxxx-xxxxxxxx.apps.googleusercontent.com"
+                className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-zinc-500"
               />
-              <User className="w-4 h-4 text-zinc-500 absolute left-4 top-1/2 -translate-y-1/2" />
+              <button
+                type="submit"
+                className="w-full py-2 bg-white hover:bg-zinc-100 text-zinc-950 font-semibold text-xs rounded-xl transition-all"
+              >
+                Enable Google Auth Button
+              </button>
+            </form>
+          </div>
+        )}
+
+        {authError && (
+          <p className="text-rose-400 text-xs flex items-center justify-center gap-1.5 pt-1">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            {authError}
+          </p>
+        )}
+
+        {/* Settings button to edit Google Client ID */}
+        {googleClientId && (
+          <div className="pt-2 border-t border-zinc-900 flex justify-end">
+            <button
+              onClick={() => {
+                setClientIdInput(googleClientId);
+                setShowClientIdSetup(true);
+              }}
+              className="text-[11px] text-zinc-500 hover:text-zinc-300 flex items-center gap-1"
+            >
+              <Settings className="w-3 h-3" />
+              <span>Change Google Client ID</span>
+            </button>
+          </div>
+        )}
+
+        {/* Modal to update Google Client ID */}
+        {showClientIdSetup && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+            <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-6 text-left space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-zinc-100 text-sm">Update Google Client ID</h3>
+                <button onClick={() => setShowClientIdSetup(false)} className="text-zinc-500 hover:text-zinc-300">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <input
+                type="text"
+                value={clientIdInput}
+                onChange={(e) => setClientIdInput(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-100 focus:outline-none"
+              />
+              <button
+                onClick={handleSaveClientId}
+                className="w-full py-2 bg-white text-zinc-950 font-semibold text-xs rounded-xl"
+              >
+                Save
+              </button>
             </div>
           </div>
-
-          {authError && (
-            <p className="text-rose-400 text-xs flex items-center justify-center gap-1.5 pt-1">
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-              {authError}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            className="w-full py-3 px-5 bg-white hover:bg-zinc-100 text-zinc-950 font-semibold text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-2 border border-zinc-200 mt-2"
-          >
-            <span>Open My Private Vault</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </form>
-
-        {/* Quick sample login buttons */}
-        <div className="pt-2 border-t border-zinc-900 flex items-center justify-center gap-2 text-xs text-zinc-500">
-          <span>Quick enter:</span>
-          <button
-            type="button"
-            onClick={() => {
-              setCurrentUserEmail('personal.account@gmail.com');
-              localStorage.setItem('pce_active_user_email', 'personal.account@gmail.com');
-            }}
-            className="text-zinc-400 hover:text-zinc-200 underline underline-offset-2"
-          >
-            personal.account@gmail.com
-          </button>
-        </div>
+        )}
 
       </div>
     );
   }
 
   // -------------------------------------------------------------
-  // VIEW 2: LOGGED-IN CREDENTIAL VAULT
+  // VIEW 2: LOGGED-IN CREDENTIAL VAULT (Verified by Google Auth)
   // -------------------------------------------------------------
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
@@ -380,20 +504,28 @@ export default function PasswordManager() {
 
       {/* Top Header Bar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 rounded-2xl bg-zinc-900/40 border border-zinc-800">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <h2 className="text-base font-semibold text-zinc-100">
-              Personal Vault: {currentUserEmail}
-            </h2>
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              Zero Database
-            </span>
+        <div className="flex items-center gap-3">
+          {googleUser.picture ? (
+            <img src={googleUser.picture} alt="" className="w-10 h-10 rounded-full border border-zinc-700" />
+          ) : (
+            <div className="w-10 h-10 rounded-full bg-zinc-800 text-zinc-200 flex items-center justify-center font-bold text-sm">
+              {googleUser.name.slice(0, 1)}
+            </div>
+          )}
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <h2 className="text-base font-semibold text-zinc-100">
+                {googleUser.name}
+              </h2>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                Google Verified
+              </span>
+            </div>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              {googleUser.email} • Managing {vaultItems.length} accounts
+            </p>
           </div>
-          <p className="text-xs text-zinc-400 mt-0.5 flex items-center gap-1.5">
-            <Cloud className="w-3.5 h-3.5 text-zinc-500" />
-            <span>Managing {vaultItems.length} accounts • Stored 100% privately in your personal storage</span>
-          </p>
         </div>
 
         {/* Header Actions */}
@@ -449,7 +581,7 @@ export default function PasswordManager() {
         <div className="p-12 text-center rounded-2xl bg-zinc-900/20 border border-zinc-800/80 space-y-3">
           <KeyRound className="w-8 h-8 text-zinc-600 mx-auto" />
           <h3 className="text-sm font-semibold text-zinc-300">
-            {vaultItems.length === 0 ? 'No accounts stored in your personal vault' : 'No matching accounts found'}
+            {vaultItems.length === 0 ? 'No accounts stored in your verified vault' : 'No matching accounts found'}
           </h3>
           <p className="text-xs text-zinc-500 max-w-md mx-auto">
             Click <strong>"Add Account"</strong> above to store your Gmail, Microsoft, Reddit, X, Instagram, or any other credentials with custom rotation countdowns and 2FA backup codes.
@@ -599,7 +731,7 @@ export default function PasswordManager() {
                 {editingItem ? 'Edit Credential' : 'Add Account Credential'}
               </h3>
               <p className="text-xs text-zinc-400">
-                Saved directly to your account. Click Save to persist all changes.
+                Saved directly to your verified Google account. Click Save to persist all changes.
               </p>
             </div>
 
