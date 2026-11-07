@@ -16,13 +16,14 @@ import {
   CheckCircle2, 
   X, 
   FileSpreadsheet, 
-  Cloud, 
   LogOut, 
-  Settings,
-  ShieldAlert
+  RefreshCw
 } from 'lucide-react';
 import { calculatePasswordScore } from '../services/cryptoVault';
 import PasswordGenerator from './PasswordGenerator';
+
+// Permanent Google OAuth 2.0 Client ID
+const GOOGLE_CLIENT_ID = '1062545025907-balc2lf7mgol3cibb1mdqckfcggpb5ef.apps.googleusercontent.com';
 
 // Supported preset providers
 const PROVIDER_PRESETS = [
@@ -38,14 +39,7 @@ const PROVIDER_PRESETS = [
 ];
 
 export default function PasswordManager() {
-  // Google Client ID state (Read from Vercel env or localStorage)
-  const [googleClientId, setGoogleClientId] = useState(() => {
-    return import.meta.env.VITE_GOOGLE_CLIENT_ID || localStorage.getItem('pce_google_client_id') || '';
-  });
-  const [showClientIdSetup, setShowClientIdSetup] = useState(false);
-  const [clientIdInput, setClientIdInput] = useState('');
-
-  // Verified Google User
+  // Verified Google User state
   const [googleUser, setGoogleUser] = useState(() => {
     const saved = localStorage.getItem('pce_verified_google_user');
     if (saved) {
@@ -59,6 +53,7 @@ export default function PasswordManager() {
   });
 
   const [authError, setAuthError] = useState('');
+  const [isGisReady, setIsGisReady] = useState(false);
   const googleBtnRef = useRef(null);
 
   // Vault data state
@@ -89,7 +84,7 @@ export default function PasswordManager() {
     url: ''
   });
 
-  // Helper to get storage key for the verified Google account
+  // Storage key for the authenticated user
   const getUserStorageKey = (user) => {
     const id = user.sub || user.email;
     return `pce_vault_data_${id.toLowerCase()}`;
@@ -146,12 +141,12 @@ export default function PasswordManager() {
 
   // Initialize and Render Official Google Sign-In Button
   useEffect(() => {
-    if (!googleUser && googleClientId) {
-      const renderGoogleBtn = () => {
+    if (!googleUser) {
+      const checkAndRender = () => {
         if (window.google?.accounts?.id && googleBtnRef.current) {
           try {
             window.google.accounts.id.initialize({
-              client_id: googleClientId,
+              client_id: GOOGLE_CLIENT_ID,
               callback: handleCredentialResponse,
               auto_select: false,
               cancel_on_tap_outside: true
@@ -159,33 +154,33 @@ export default function PasswordManager() {
 
             window.google.accounts.id.renderButton(googleBtnRef.current, {
               type: 'standard',
-              theme: 'filled_black',
+              theme: 'outline',
               size: 'large',
               text: 'continue_with',
               shape: 'pill',
               logo_alignment: 'left',
               width: 280
             });
+            setIsGisReady(true);
           } catch (err) {
             console.error('GIS render error:', err);
           }
         }
       };
 
-      // Check if SDK is already loaded or wait
       if (window.google?.accounts?.id) {
-        renderGoogleBtn();
+        checkAndRender();
       } else {
-        const timer = setInterval(() => {
+        const interval = setInterval(() => {
           if (window.google?.accounts?.id) {
-            clearInterval(timer);
-            renderGoogleBtn();
+            clearInterval(interval);
+            checkAndRender();
           }
-        }, 300);
-        return () => clearInterval(timer);
+        }, 200);
+        return () => clearInterval(interval);
       }
     }
-  }, [googleUser, googleClientId]);
+  }, [googleUser]);
 
   // Sign out
   const handleSignOut = () => {
@@ -345,17 +340,6 @@ export default function PasswordManager() {
     triggerToast('Google Sheet CSV downloaded successfully!');
   };
 
-  // Save Google Client ID
-  const handleSaveClientId = (e) => {
-    e.preventDefault();
-    const clean = clientIdInput.trim();
-    if (!clean) return;
-    setGoogleClientId(clean);
-    localStorage.setItem('pce_google_client_id', clean);
-    setShowClientIdSetup(false);
-    setClientIdInput('');
-  };
-
   // Filter items
   const filteredItems = vaultItems.filter(item => {
     const q = searchQuery.toLowerCase();
@@ -367,7 +351,7 @@ export default function PasswordManager() {
   });
 
   // -------------------------------------------------------------
-  // VIEW 1: GOOGLE AUTH ONLY LOGIN (No unauthenticated private login)
+  // VIEW 1: OFFICIAL GOOGLE SIGN IN (Zero Setup Needed for User)
   // -------------------------------------------------------------
   if (!googleUser) {
     return (
@@ -394,94 +378,29 @@ export default function PasswordManager() {
           </h2>
 
           <p className="text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto">
-            Authenticate directly with your official Google Account to access your private encrypted credential vault.
+            Click below to sign in with your official Google Account. Your vault is isolated to your verified identity with zero database on our servers.
           </p>
         </div>
 
-        {/* Real Google Auth Button Container */}
-        {googleClientId ? (
-          <div className="flex flex-col items-center justify-center pt-2 space-y-3">
-            <div ref={googleBtnRef} className="min-h-[44px] flex items-center justify-center" />
-            <p className="text-[11px] text-zinc-500">
-              Only verified Google accounts can unlock this vault.
-            </p>
-          </div>
-        ) : (
-          /* Client ID prompt if not configured */
-          <div className="p-4 rounded-2xl bg-zinc-900 border border-zinc-800 text-left space-y-3">
-            <div className="flex items-center gap-2 text-xs font-semibold text-zinc-200">
-              <ShieldAlert className="w-4 h-4 text-amber-400" />
-              <span>Connect Google OAuth Client ID</span>
+        {/* Official Google Sign-In Button */}
+        <div className="flex flex-col items-center justify-center pt-2 space-y-3 min-h-[50px]">
+          <div ref={googleBtnRef} className="flex items-center justify-center" />
+          {!isGisReady && (
+            <div className="flex items-center gap-2 text-xs text-zinc-500">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              <span>Loading Google Sign-In...</span>
             </div>
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              To enable official Google Auth popups on <code>pce-seven.vercel.app</code>, enter your <strong>Google OAuth 2.0 Client ID</strong>:
-            </p>
-            <form onSubmit={handleSaveClientId} className="space-y-2">
-              <input
-                type="text"
-                required
-                value={clientIdInput}
-                onChange={(e) => setClientIdInput(e.target.value)}
-                placeholder="xxxx-xxxxxxxx.apps.googleusercontent.com"
-                className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-zinc-500"
-              />
-              <button
-                type="submit"
-                className="w-full py-2 bg-white hover:bg-zinc-100 text-zinc-950 font-semibold text-xs rounded-xl transition-all"
-              >
-                Enable Google Auth Button
-              </button>
-            </form>
-          </div>
-        )}
+          )}
+          <p className="text-[11px] text-zinc-500">
+            Protected by Google Identity Services & client-side encryption.
+          </p>
+        </div>
 
         {authError && (
           <p className="text-rose-400 text-xs flex items-center justify-center gap-1.5 pt-1">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
             {authError}
           </p>
-        )}
-
-        {/* Settings button to edit Google Client ID */}
-        {googleClientId && (
-          <div className="pt-2 border-t border-zinc-900 flex justify-end">
-            <button
-              onClick={() => {
-                setClientIdInput(googleClientId);
-                setShowClientIdSetup(true);
-              }}
-              className="text-[11px] text-zinc-500 hover:text-zinc-300 flex items-center gap-1"
-            >
-              <Settings className="w-3 h-3" />
-              <span>Change Google Client ID</span>
-            </button>
-          </div>
-        )}
-
-        {/* Modal to update Google Client ID */}
-        {showClientIdSetup && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-            <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-6 text-left space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-zinc-100 text-sm">Update Google Client ID</h3>
-                <button onClick={() => setShowClientIdSetup(false)} className="text-zinc-500 hover:text-zinc-300">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <input
-                type="text"
-                value={clientIdInput}
-                onChange={(e) => setClientIdInput(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-100 focus:outline-none"
-              />
-              <button
-                onClick={handleSaveClientId}
-                className="w-full py-2 bg-white text-zinc-950 font-semibold text-xs rounded-xl"
-              >
-                Save
-              </button>
-            </div>
-          </div>
         )}
 
       </div>
