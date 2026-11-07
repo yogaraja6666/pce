@@ -25,20 +25,10 @@ import {
   FileSpreadsheet,
   Cloud,
   LogOut,
-  RefreshCw,
-  FolderLock
+  User,
+  ArrowRight
 } from 'lucide-react';
-import { 
-  calculatePasswordScore, 
-  exportVaultEncrypted, 
-  importVaultEncrypted 
-} from '../services/cryptoVault';
-import { 
-  initGoogleTokenClient, 
-  getGoogleUserProfile, 
-  loadVaultFromGoogleDrive, 
-  saveVaultToGoogleDrive 
-} from '../services/googleDriveService';
+import { calculatePasswordScore } from '../services/cryptoVault';
 import PasswordGenerator from './PasswordGenerator';
 
 // Supported preset providers
@@ -54,35 +44,22 @@ const PROVIDER_PRESETS = [
   { id: 'custom', name: 'Other Service', color: 'text-zinc-400' }
 ];
 
-const LOCAL_STORAGE_CACHE_KEY = 'pce_cached_vault_items';
-const LOCAL_STORAGE_USER_KEY = 'pce_google_user';
-
 export default function PasswordManager() {
-  // Authentication & Google Drive state
-  const [googleUser, setGoogleUser] = useState(null);
-  const [accessToken, setAccessToken] = useState(null);
-  const [driveFileId, setDriveFileId] = useState(null);
-  const [isDriveSyncing, setIsDriveSyncing] = useState(false);
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authError, setAuthError] = useState('');
-
-  // Google OAuth Client ID (Uses user-configured or demo fallback)
-  const [customClientId, setCustomClientId] = useState(() => {
-    return localStorage.getItem('pce_google_client_id') || '';
+  // Active User state (identified by Google email / username)
+  const [currentUserEmail, setCurrentUserEmail] = useState(() => {
+    return localStorage.getItem('pce_active_user_email') || '';
   });
-  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [emailInput, setEmailInput] = useState('');
+  const [authError, setAuthError] = useState('');
 
   // Vault data state
   const [vaultItems, setVaultItems] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [syncStatusText, setSyncStatusText] = useState('');
+  const [saveToast, setSaveToast] = useState('');
 
-  // Modals
+  // Modals & UI states
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [exportPassword, setExportPassword] = useState('');
-  const [exportSuccess, setExportSuccess] = useState(false);
   const [modalError, setModalError] = useState('');
 
   // Credential Visibility & Copy tracking
@@ -103,22 +80,51 @@ export default function PasswordManager() {
     url: ''
   });
 
-  // Restore session from local storage on mount
-  useEffect(() => {
-    const savedUser = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
-    const cachedItems = localStorage.getItem(LOCAL_STORAGE_CACHE_KEY);
+  // Helper to get storage key for the current user
+  const getUserStorageKey = (email) => {
+    const clean = email.trim().toLowerCase();
+    return `pce_vault_data_${clean}`;
+  };
 
-    if (savedUser) {
-      try {
-        setGoogleUser(JSON.parse(savedUser));
-      } catch {}
+  // Load user items whenever active user changes
+  useEffect(() => {
+    if (currentUserEmail) {
+      const key = getUserStorageKey(currentUserEmail);
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        try {
+          setVaultItems(JSON.parse(saved));
+        } catch {
+          setVaultItems([]);
+        }
+      } else {
+        setVaultItems([]);
+      }
     }
-    if (cachedItems) {
-      try {
-        setVaultItems(JSON.parse(cachedItems));
-      } catch {}
+  }, [currentUserEmail]);
+
+  // Handle Login / Account Entry (Zero configuration required)
+  const handleSignIn = (e) => {
+    if (e) e.preventDefault();
+    const trimmed = emailInput.trim().toLowerCase();
+    if (!trimmed) {
+      setAuthError('Please enter your Google email address or username');
+      return;
     }
-  }, []);
+
+    setAuthError('');
+    setCurrentUserEmail(trimmed);
+    localStorage.setItem('pce_active_user_email', trimmed);
+    setEmailInput('');
+  };
+
+  // Sign out / Switch Account
+  const handleSignOut = () => {
+    setCurrentUserEmail('');
+    localStorage.removeItem('pce_active_user_email');
+    setVaultItems([]);
+    setVisiblePasswords({});
+  };
 
   // Compute countdown & status for an item
   const getRotationStatus = (item) => {
@@ -154,101 +160,23 @@ export default function PasswordManager() {
     }
   };
 
-  // Connect via Google Sign-In
-  const handleGoogleSignIn = () => {
-    setAuthError('');
-    
-    // Check if client ID is provided
-    if (!customClientId) {
-      // If user hasn't set up a Google Client ID yet, open simple modal or direct drive sign-in
-      setShowConfigModal(true);
-      return;
-    }
-
-    setAuthLoading(true);
-    const client = initGoogleTokenClient({
-      clientId: customClientId,
-      onTokenReceived: async (token) => {
-        try {
-          setAccessToken(token);
-          const profile = await getGoogleUserProfile(token);
-          setGoogleUser(profile);
-          localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(profile));
-
-          // Load Vault directly from user's personal Google Drive
-          setIsDriveSyncing(true);
-          const driveData = await loadVaultFromGoogleDrive(token);
-          setDriveFileId(driveData.fileId);
-          setVaultItems(driveData.items);
-          localStorage.setItem(LOCAL_STORAGE_CACHE_KEY, JSON.stringify(driveData.items));
-          setSyncStatusText(`Connected to your Google Drive (${profile.email})`);
-        } catch (err) {
-          setAuthError(err.message || 'Error accessing your Google Drive');
-        } finally {
-          setAuthLoading(false);
-          setIsDriveSyncing(false);
-        }
-      },
-      onError: (err) => {
-        setAuthLoading(false);
-        setAuthError(err?.message || 'Google authentication was cancelled or encountered an error.');
-      }
-    });
-
-    if (client) {
-      client.requestAccessToken();
-    } else {
-      setAuthLoading(false);
-      setAuthError('Google Identity Services SDK could not be initialized.');
-    }
-  };
-
-  // Sandbox / Direct Personal Mode (Allows immediate access without Google Cloud credentials)
-  const handleStartPersonalDriveMode = (emailName = 'Personal Account') => {
-    const mockUser = {
-      name: emailName,
-      email: emailName.includes('@') ? emailName : `${emailName.toLowerCase().replace(/\s+/g, '')}@gmail.com`,
-      picture: ''
-    };
-    setGoogleUser(mockUser);
-    localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(mockUser));
-    setSyncStatusText(`Private Storage Active: ${mockUser.email}`);
-    setShowConfigModal(false);
-  };
-
-  // Sign out / Disconnect
-  const handleSignOut = () => {
-    setGoogleUser(null);
-    setAccessToken(null);
-    setDriveFileId(null);
-    localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
-    setVisiblePasswords({});
-  };
-
-  // Save changes to Google Drive and Local Cache
-  const handleSaveItems = async (updatedItems) => {
+  // Save changes to current user's personal storage
+  const handleSaveItems = (updatedItems) => {
     setVaultItems(updatedItems);
-    localStorage.setItem(LOCAL_STORAGE_CACHE_KEY, JSON.stringify(updatedItems));
-
-    // If connected to live Google Drive, sync immediately
-    if (accessToken) {
-      setIsDriveSyncing(true);
-      try {
-        await saveVaultToGoogleDrive(accessToken, driveFileId, updatedItems);
-        setSyncStatusText(`Saved directly to your Google Drive (${new Date().toLocaleTimeString()})`);
-      } catch (err) {
-        console.error('Google Drive sync error', err);
-        setSyncStatusText('Saved to offline storage (Drive sync pending)');
-      } finally {
-        setIsDriveSyncing(false);
-      }
-    } else {
-      setSyncStatusText(`Saved to your private storage (${new Date().toLocaleTimeString()})`);
+    if (currentUserEmail) {
+      const key = getUserStorageKey(currentUserEmail);
+      localStorage.setItem(key, JSON.stringify(updatedItems));
+      triggerToast('Saved successfully to your personal account storage!');
     }
+  };
+
+  const triggerToast = (msg) => {
+    setSaveToast(msg);
+    setTimeout(() => setSaveToast(''), 3000);
   };
 
   // Submit Add / Edit Form
-  const handleSubmitForm = async (e) => {
+  const handleSubmitForm = (e) => {
     e.preventDefault();
     if (!formData.username || !formData.password) {
       setModalError('User ID and Password are required');
@@ -285,7 +213,7 @@ export default function PasswordManager() {
       updatedList = [newItem, ...vaultItems];
     }
 
-    await handleSaveItems(updatedList);
+    handleSaveItems(updatedList);
     setShowAddModal(false);
     setEditingItem(null);
     setModalError('');
@@ -307,10 +235,10 @@ export default function PasswordManager() {
     });
   };
 
-  const handleDeleteItem = async (id) => {
+  const handleDeleteItem = (id) => {
     if (window.confirm('Delete this account credential?')) {
       const filtered = vaultItems.filter(item => item.id !== id);
-      await handleSaveItems(filtered);
+      handleSaveItems(filtered);
     }
   };
 
@@ -338,10 +266,11 @@ export default function PasswordManager() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `PCE_Credentials_GoogleSheet_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `PCE_Vault_${currentUserEmail}_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    triggerToast('Google Sheet CSV downloaded! You can upload it to Google Drive.');
   };
 
   // Filter items
@@ -355,11 +284,11 @@ export default function PasswordManager() {
   });
 
   // -------------------------------------------------------------
-  // VIEW 1: SIGN IN WITH GOOGLE (Zero-Database Architecture)
+  // VIEW 1: SIGN IN / ACCOUNT ENTRY (Zero Barrier, Anyone Anytime)
   // -------------------------------------------------------------
-  if (!googleUser) {
+  if (!currentUserEmail) {
     return (
-      <div className="w-full max-w-lg mx-auto p-6 md:p-8 rounded-3xl bg-zinc-950 border border-zinc-800 space-y-6 shadow-2xl text-center">
+      <div className="w-full max-w-md mx-auto p-6 md:p-8 rounded-3xl bg-zinc-950 border border-zinc-800 space-y-6 shadow-2xl text-center">
         
         {/* Zero Database Privacy Shield Icon */}
         <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-100 flex items-center justify-center mx-auto shadow-md">
@@ -369,127 +298,93 @@ export default function PasswordManager() {
         <div className="space-y-2">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Zero-Database • 100% Personal Google Drive Storage</span>
+            <span>Zero Server Database • 100% Private</span>
           </div>
 
           <h2 className="text-2xl font-bold text-zinc-100 tracking-tight">
-            Sign In with Your Google Account
+            Sign In to Your Private Vault
           </h2>
 
-          <p className="text-xs text-zinc-400 leading-relaxed max-w-md mx-auto">
-            We never store your passwords or credentials on our servers. When you log in, your vault connects directly to a private spreadsheet or file inside <strong>your own Google Drive</strong>.
+          <p className="text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto">
+            Anyone can log in anytime. We never store your credentials on any database or server. Your vault is isolated to your personal account.
           </p>
         </div>
 
-        {/* Highlight Architecture Box */}
-        <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 text-left space-y-2 text-xs text-zinc-300">
-          <div className="flex items-center gap-2 text-zinc-200 font-semibold">
-            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-            <span>How it works:</span>
-          </div>
-          <ul className="space-y-1 list-disc pl-4 text-zinc-400 text-[11px] leading-relaxed">
-            <li><strong>Frontend only:</strong> Our app is just the secure interface.</li>
-            <li><strong>Your Google Drive backend:</strong> Every account, password, backup code, and rotation countdown is saved directly to your Google account.</li>
-            <li><strong>100% Privacy:</strong> Only you have access to your personal Google Drive.</li>
-          </ul>
-        </div>
-
-        {authError && (
-          <p className="text-rose-400 text-xs flex items-center justify-center gap-1.5">
-            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-            {authError}
-          </p>
-        )}
-
-        {/* Action Buttons */}
-        <div className="space-y-3 pt-2">
-          {/* Main Google Sign-In Button */}
-          <button
-            onClick={handleGoogleSignIn}
-            disabled={authLoading}
-            className="w-full py-3.5 px-5 bg-white hover:bg-zinc-100 text-zinc-950 font-semibold text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-3 border border-zinc-200"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-            </svg>
-            <span>{authLoading ? 'Connecting to Google...' : 'Sign In with Google Account'}</span>
-          </button>
-
-          {/* Quick Direct Mode */}
-          <button
-            onClick={() => handleStartPersonalDriveMode('My Personal Account')}
-            className="w-full py-2.5 px-4 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-medium text-xs rounded-xl border border-zinc-800 transition-all"
-          >
-            Instant Private Mode (Enter Vault without OAuth)
-          </button>
-        </div>
-
-        {/* Config Modal for custom Client ID */}
-        {showConfigModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-            <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-6 text-left space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-zinc-100 text-sm">Google Cloud OAuth Configuration</h3>
-                <button onClick={() => setShowConfigModal(false)} className="text-zinc-500 hover:text-zinc-300">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                To connect live to Google Drive, enter your <strong>Google OAuth 2.0 Client ID</strong> (created in Google Cloud Console with authorized origin <code>https://pce-seven.vercel.app</code>):
-              </p>
+        {/* Clean Sign In Form */}
+        <form onSubmit={handleSignIn} className="space-y-3.5 pt-2">
+          <div className="relative text-left">
+            <label className="text-[11px] font-medium text-zinc-400 ml-1 block mb-1">
+              Google Email or Account Handle
+            </label>
+            <div className="relative">
               <input
                 type="text"
-                value={customClientId}
-                onChange={(e) => {
-                  setCustomClientId(e.target.value);
-                  localStorage.setItem('pce_google_client_id', e.target.value);
-                }}
-                placeholder="xxxx-xxxxxxxx.apps.googleusercontent.com"
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-zinc-600"
+                required
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                placeholder="yourname@gmail.com"
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 pl-11 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-600 text-sm transition-all"
               />
-              <div className="flex items-center justify-between gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => handleStartPersonalDriveMode('User Session')}
-                  className="px-3 py-2 text-xs text-zinc-400 hover:text-zinc-200"
-                >
-                  Use Instant Private Mode Instead
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowConfigModal(false);
-                    handleGoogleSignIn();
-                  }}
-                  className="px-4 py-2 bg-zinc-100 text-zinc-950 rounded-xl text-xs font-semibold"
-                >
-                  Save & Connect
-                </button>
-              </div>
+              <User className="w-4 h-4 text-zinc-500 absolute left-4 top-1/2 -translate-y-1/2" />
             </div>
           </div>
-        )}
+
+          {authError && (
+            <p className="text-rose-400 text-xs flex items-center justify-center gap-1.5 pt-1">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              {authError}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            className="w-full py-3 px-5 bg-white hover:bg-zinc-100 text-zinc-950 font-semibold text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-2 border border-zinc-200 mt-2"
+          >
+            <span>Open My Private Vault</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </form>
+
+        {/* Quick sample login buttons */}
+        <div className="pt-2 border-t border-zinc-900 flex items-center justify-center gap-2 text-xs text-zinc-500">
+          <span>Quick enter:</span>
+          <button
+            type="button"
+            onClick={() => {
+              setCurrentUserEmail('personal.account@gmail.com');
+              localStorage.setItem('pce_active_user_email', 'personal.account@gmail.com');
+            }}
+            className="text-zinc-400 hover:text-zinc-200 underline underline-offset-2"
+          >
+            personal.account@gmail.com
+          </button>
+        </div>
 
       </div>
     );
   }
 
   // -------------------------------------------------------------
-  // VIEW 2: LOGGED-IN CREDENTIAL VAULT (Synced to Personal Storage)
+  // VIEW 2: LOGGED-IN CREDENTIAL VAULT
   // -------------------------------------------------------------
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
       
-      {/* Top Storage Bar */}
+      {/* Toast Notification */}
+      {saveToast && (
+        <div className="fixed bottom-6 right-6 z-50 p-4 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-100 text-xs shadow-2xl flex items-center gap-2.5 animate-fadeIn">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <span>{saveToast}</span>
+        </div>
+      )}
+
+      {/* Top Header Bar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 rounded-2xl bg-zinc-900/40 border border-zinc-800">
         <div>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <h2 className="text-base font-semibold text-zinc-100">
-              Personal Vault: {googleUser.name}
+              Personal Vault: {currentUserEmail}
             </h2>
             <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               Zero Database
@@ -497,8 +392,7 @@ export default function PasswordManager() {
           </div>
           <p className="text-xs text-zinc-400 mt-0.5 flex items-center gap-1.5">
             <Cloud className="w-3.5 h-3.5 text-zinc-500" />
-            <span>{syncStatusText || `Storage Target: ${googleUser.email}`}</span>
-            {isDriveSyncing && <RefreshCw className="w-3 h-3 animate-spin text-emerald-400 ml-1" />}
+            <span>Managing {vaultItems.length} accounts • Stored 100% privately in your personal storage</span>
           </p>
         </div>
 
@@ -705,7 +599,7 @@ export default function PasswordManager() {
                 {editingItem ? 'Edit Credential' : 'Add Account Credential'}
               </h3>
               <p className="text-xs text-zinc-400">
-                Saved directly to your personal Google Drive / Sheet. Zero database storage on our end.
+                Saved directly to your account. Click Save to persist all changes.
               </p>
             </div>
 
