@@ -17,9 +17,17 @@ import {
   X, 
   FileSpreadsheet, 
   LogOut, 
-  RefreshCw
+  RefreshCw,
+  ExternalLink,
+  Cloud,
+  CheckCheck
 } from 'lucide-react';
 import { calculatePasswordScore } from '../services/cryptoVault';
+import { 
+  requestGoogleDriveToken, 
+  syncVaultToGoogleDriveSheet, 
+  SHEET_NAME 
+} from '../services/googleDriveService';
 import PasswordGenerator from './PasswordGenerator';
 
 // Permanent Google OAuth 2.0 Client ID
@@ -51,6 +59,16 @@ export default function PasswordManager() {
     }
     return null;
   });
+
+  // Google Drive Token & Live Sheet State
+  const [driveAccessToken, setDriveAccessToken] = useState(() => {
+    return sessionStorage.getItem('pce_drive_token') || null;
+  });
+  const [liveSheetLink, setLiveSheetLink] = useState(() => {
+    return localStorage.getItem('pce_live_sheet_link') || '';
+  });
+  const [isDriveSyncing, setIsDriveSyncing] = useState(false);
+  const [driveError, setDriveError] = useState('');
 
   const [authError, setAuthError] = useState('');
   const [isGisReady, setIsGisReady] = useState(false);
@@ -107,12 +125,11 @@ export default function PasswordManager() {
     }
   }, [googleUser]);
 
-  // Handle Google Credential Response (JWT from Google Auth)
+  // Handle Google Credential Response (Sign-In)
   const handleCredentialResponse = (response) => {
     try {
       if (!response.credential) throw new Error('No credential returned from Google');
       
-      // Decode JWT payload client-side (Zero database)
       const base64Url = response.credential.split('.')[1];
       const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
       const jsonPayload = decodeURIComponent(
@@ -182,10 +199,47 @@ export default function PasswordManager() {
     }
   }, [googleUser]);
 
+  // Request Drive Authorization & Create/Sync Google Sheet in user's Drive
+  const handleConnectDriveAndSync = (currentItems = vaultItems) => {
+    setDriveError('');
+    setIsDriveSyncing(true);
+
+    requestGoogleDriveToken({
+      clientId: GOOGLE_CLIENT_ID,
+      onTokenReceived: async (token) => {
+        try {
+          setDriveAccessToken(token);
+          sessionStorage.setItem('pce_drive_token', token);
+
+          // Sync directly to Google Drive Sheet
+          const result = await syncVaultToGoogleDriveSheet(token, currentItems);
+          if (result.link) {
+            setLiveSheetLink(result.link);
+            localStorage.setItem('pce_live_sheet_link', result.link);
+          }
+          triggerToast(`✅ Successfully created & saved Google Sheet in your Google Drive!`);
+        } catch (err) {
+          console.error('Drive sync error:', err);
+          setDriveError(err.message || 'Failed to sync to Google Drive');
+        } finally {
+          setIsDriveSyncing(false);
+        }
+      },
+      onError: (err) => {
+        setIsDriveSyncing(false);
+        setDriveError(err.message || 'Drive permission was not granted.');
+      }
+    });
+  };
+
   // Sign out
   const handleSignOut = () => {
     setGoogleUser(null);
+    setDriveAccessToken(null);
+    setLiveSheetLink('');
+    sessionStorage.removeItem('pce_drive_token');
     localStorage.removeItem('pce_verified_google_user');
+    localStorage.removeItem('pce_live_sheet_link');
     setVaultItems([]);
     setVisiblePasswords({});
     if (window.google?.accounts?.id) {
@@ -227,19 +281,38 @@ export default function PasswordManager() {
     }
   };
 
-  // Save changes to current user's personal storage
-  const handleSaveItems = (updatedItems) => {
+  // Save changes to current user's personal storage AND live Drive Sheet if connected
+  const handleSaveItems = async (updatedItems) => {
     setVaultItems(updatedItems);
     if (googleUser) {
       const key = getUserStorageKey(googleUser);
       localStorage.setItem(key, JSON.stringify(updatedItems));
-      triggerToast('Saved directly to your verified Google account storage!');
+    }
+
+    // If already has active Drive token, update Google Sheet in real time
+    if (driveAccessToken) {
+      setIsDriveSyncing(true);
+      try {
+        const result = await syncVaultToGoogleDriveSheet(driveAccessToken, updatedItems);
+        if (result.link) {
+          setLiveSheetLink(result.link);
+          localStorage.setItem('pce_live_sheet_link', result.link);
+        }
+        triggerToast('Saved to your Google Drive Sheet!');
+      } catch (err) {
+        console.error('Silent drive sync failed, retry next time', err);
+        triggerToast('Saved locally (Google Drive update queued)');
+      } finally {
+        setIsDriveSyncing(false);
+      }
+    } else {
+      triggerToast('Saved locally! Click "Save to Google Drive" to sync with your Drive.');
     }
   };
 
   const triggerToast = (msg) => {
     setSaveToast(msg);
-    setTimeout(() => setSaveToast(''), 3000);
+    setTimeout(() => setSaveToast(''), 3500);
   };
 
   // Submit Add / Edit Form
@@ -315,31 +388,6 @@ export default function PasswordManager() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Export to Google Sheet CSV
-  const handleExportCSV = () => {
-    const headers = ['Provider', 'User ID', 'Password', '2FA Backup Codes', 'Created Date', 'Last Changed Date', 'Rotation Days', 'Notes'];
-    const rows = vaultItems.map(i => [
-      `"${i.providerName || ''}"`,
-      `"${i.username || ''}"`,
-      `"${i.password || ''}"`,
-      `"${(i.backupCodes || '').replace(/\n/g, ' | ')}"`,
-      `"${new Date(i.createdDate || Date.now()).toLocaleDateString()}"`,
-      `"${new Date(i.lastChangedDate || Date.now()).toLocaleDateString()}"`,
-      i.rotationDays || 60,
-      `"${i.notes || ''}"`
-    ]);
-
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `PCE_Vault_${googleUser?.email}_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    triggerToast('Google Sheet CSV downloaded successfully!');
-  };
-
   // Filter items
   const filteredItems = vaultItems.filter(item => {
     const q = searchQuery.toLowerCase();
@@ -351,7 +399,7 @@ export default function PasswordManager() {
   });
 
   // -------------------------------------------------------------
-  // VIEW 1: OFFICIAL GOOGLE SIGN IN (Zero Setup Needed for User)
+  // VIEW 1: OFFICIAL GOOGLE SIGN IN
   // -------------------------------------------------------------
   if (!googleUser) {
     return (
@@ -378,7 +426,7 @@ export default function PasswordManager() {
           </h2>
 
           <p className="text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto">
-            Click below to sign in with your official Google Account. Your vault is isolated to your verified identity with zero database on our servers.
+            Click below to sign in with your official Google Account. Your vault syncs directly with a Google Sheet in your personal Google Drive.
           </p>
         </div>
 
@@ -408,7 +456,7 @@ export default function PasswordManager() {
   }
 
   // -------------------------------------------------------------
-  // VIEW 2: LOGGED-IN CREDENTIAL VAULT (Verified by Google Auth)
+  // VIEW 2: LOGGED-IN CREDENTIAL VAULT (With Live Google Drive Sync)
   // -------------------------------------------------------------
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
@@ -462,16 +510,6 @@ export default function PasswordManager() {
             <span>Add Account</span>
           </button>
 
-          {/* Export to Google Sheet CSV */}
-          <button
-            onClick={handleExportCSV}
-            title="Download formatted CSV spreadsheet for Google Sheets"
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded-lg text-xs font-medium transition-all"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Export to Sheet</span>
-          </button>
-
           {/* Sign Out */}
           <button
             onClick={handleSignOut}
@@ -482,6 +520,86 @@ export default function PasswordManager() {
           </button>
         </div>
       </div>
+
+      {/* Google Drive Live Sheet Banner */}
+      <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-zinc-900/60 to-zinc-900/40 border border-emerald-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+            <FileSpreadsheet className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-zinc-100 flex items-center gap-1.5">
+              <span>Google Drive Sheet Storage:</span>
+              <span className="text-emerald-400 font-mono font-normal">"{SHEET_NAME}"</span>
+            </h4>
+            <p className="text-[11px] text-zinc-400 mt-0.5">
+              {liveSheetLink ? (
+                <span className="text-emerald-300 flex items-center gap-1">
+                  <CheckCheck className="w-3 h-3 text-emerald-400" />
+                  Synced to your personal Google Drive spreadsheet.
+                </span>
+              ) : (
+                'Grant one-time Drive permission to automatically save this as a real Google Sheet in your Google Drive.'
+              )}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {liveSheetLink ? (
+            <a
+              href={liveSheetLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-sm transition-all"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Open in Google Sheets</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          ) : (
+            <button
+              onClick={() => handleConnectDriveAndSync()}
+              disabled={isDriveSyncing}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-sm transition-all"
+            >
+              {isDriveSyncing ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Connecting Drive...</span>
+                </>
+              ) : (
+                <>
+                  <Cloud className="w-3.5 h-3.5" />
+                  <span>Save to My Google Drive</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {driveError && (
+        <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold">{driveError}</p>
+            {driveError.includes('disabled') && (
+              <p className="text-[11px] text-rose-200">
+                👉 Click here to enable Google Drive API in your Google Cloud project: {' '}
+                <a 
+                  href="https://console.cloud.google.com/apis/library/drive.googleapis.com" 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="underline font-bold text-white hover:text-rose-100"
+                >
+                  Enable Google Drive API
+                </a>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Search Bar */}
       <div className="relative max-w-sm">
@@ -650,7 +768,7 @@ export default function PasswordManager() {
                 {editingItem ? 'Edit Credential' : 'Add Account Credential'}
               </h3>
               <p className="text-xs text-zinc-400">
-                Saved directly to your verified Google account. Click Save to persist all changes.
+                Saved directly to your Google Drive Sheet. Zero database on our servers.
               </p>
             </div>
 
@@ -804,7 +922,7 @@ export default function PasswordManager() {
                   type="submit"
                   className="px-5 py-2 bg-zinc-100 hover:bg-white text-zinc-950 font-semibold rounded-xl transition-all shadow-sm"
                 >
-                  {editingItem ? 'Save Changes' : 'Save to Personal Vault'}
+                  {editingItem ? 'Save Changes' : 'Save to Vault'}
                 </button>
               </div>
             </form>

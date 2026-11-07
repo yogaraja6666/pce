@@ -1,16 +1,68 @@
 // Personal Google Drive & Google Sheets Integration
 // 100% Client-Side: Zero data stored on our servers.
-// Data is stored directly in the user's personal Google Drive file or Google Sheet.
+// Directly creates and updates a native Google Sheet in the user's personal Google Drive.
 
-const VAULT_FILE_NAME = 'PCE_Secure_Vault.json';
+export const SHEET_NAME = 'PCE_Credentials_Vault (Google Sheet)';
 
 /**
- * Initializes or fetches existing Google OAuth token using Google Identity Services (GIS)
+ * Converts vault items to CSV format suitable for Google Sheets import
  */
-export function initGoogleTokenClient({ clientId, onTokenReceived, onError }) {
-  if (typeof window === 'undefined' || !window.google || !window.google.accounts) {
+export function itemsToCsv(items) {
+  const headers = ['Provider', 'User ID', 'Password', '2FA Backup Codes', 'Created Date', 'Last Changed Date', 'Rotation Days', 'Notes'];
+  const rows = items.map(i => [
+    `"${(i.providerName || '').replace(/"/g, '""')}"`,
+    `"${(i.username || '').replace(/"/g, '""')}"`,
+    `"${(i.password || '').replace(/"/g, '""')}"`,
+    `"${(i.backupCodes || '').replace(/\n/g, ' | ').replace(/"/g, '""')}"`,
+    `"${new Date(i.createdDate || Date.now()).toLocaleDateString()}"`,
+    `"${new Date(i.lastChangedDate || Date.now()).toLocaleDateString()}"`,
+    i.rotationDays || 60,
+    `"${(i.notes || '').replace(/"/g, '""')}"`
+  ]);
+
+  return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+}
+
+/**
+ * Parses CSV rows back to vault items
+ */
+export function csvToItems(csvText) {
+  if (!csvText) return [];
+  const lines = csvText.split('\n').filter(Boolean);
+  if (lines.length <= 1) return [];
+
+  const items = [];
+  // Skip header line
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    // Simple regex CSV splitter handling quotes
+    const cols = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || line.split(',');
+    const clean = cols.map(c => c.replace(/^"|"$/g, '').replace(/""/g, '"').trim());
+
+    if (clean[1]) {
+      items.push({
+        id: 'acc_' + Date.now() + '_' + i,
+        providerName: clean[0] || 'Account',
+        username: clean[1] || '',
+        password: clean[2] || '',
+        backupCodes: (clean[3] || '').replace(/ \| /g, '\n'),
+        createdDate: clean[4] ? new Date(clean[4]).toISOString() : new Date().toISOString(),
+        lastChangedDate: clean[5] ? new Date(clean[5]).toISOString() : new Date().toISOString(),
+        rotationDays: parseInt(clean[6], 10) || 60,
+        notes: clean[7] || ''
+      });
+    }
+  }
+  return items;
+}
+
+/**
+ * Initializes Google OAuth 2.0 token client to request Google Drive File scope
+ */
+export function requestGoogleDriveToken({ clientId, onTokenReceived, onError }) {
+  if (!window.google?.accounts?.oauth2) {
     if (onError) onError(new Error('Google Identity Services SDK not loaded'));
-    return null;
+    return;
   }
 
   try {
@@ -18,88 +70,75 @@ export function initGoogleTokenClient({ clientId, onTokenReceived, onError }) {
       client_id: clientId,
       scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
       callback: (tokenResponse) => {
-        if (tokenResponse.error !== undefined) {
-          if (onError) onError(tokenResponse);
+        if (tokenResponse.error) {
+          if (onError) onError(new Error(tokenResponse.error_description || tokenResponse.error));
           return;
         }
         if (onTokenReceived) onTokenReceived(tokenResponse.access_token);
       },
     });
 
-    return tokenClient;
+    tokenClient.requestAccessToken({ prompt: 'consent' });
   } catch (err) {
     if (onError) onError(err);
-    return null;
   }
 }
 
 /**
- * Fetches Google User Profile information using the access token
+ * Finds or creates a real Google Sheet in the user's Google Drive
  */
-export async function getGoogleUserProfile(accessToken) {
-  const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!res.ok) throw new Error('Failed to fetch user profile');
-  return res.json();
-}
+export async function syncVaultToGoogleDriveSheet(accessToken, items) {
+  const csvData = itemsToCsv(items);
 
-/**
- * Finds or loads the vault file from the user's personal Google Drive
- */
-export async function loadVaultFromGoogleDrive(accessToken) {
-  // 1. Search for existing file
-  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='${VAULT_FILE_NAME}' and trashed=false&fields=files(id, name, modifiedTime)`;
+  // 1. Check if the spreadsheet already exists in the user's Drive
+  const query = `name='${SHEET_NAME}' and trashed=false`;
+  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id, name, webViewLink)`;
+  
   const searchRes = await fetch(searchUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!searchRes.ok) throw new Error('Could not access Google Drive');
+
+  if (!searchRes.ok) {
+    const errorBody = await searchRes.json().catch(() => ({}));
+    throw new Error(errorBody.error?.message || 'Google Drive API error. Ensure Google Drive API is enabled in your Google Cloud project.');
+  }
+
   const searchData = await searchRes.json();
 
   if (searchData.files && searchData.files.length > 0) {
-    const fileId = searchData.files[0].id;
-    // 2. Fetch file content
-    const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (!contentRes.ok) throw new Error('Failed to read vault file from Google Drive');
-    const items = await contentRes.json();
-    return { fileId, items: Array.isArray(items) ? items : [] };
-  }
+    const existingFile = searchData.files[0];
+    const fileId = existingFile.id;
 
-  // File doesn't exist yet: create an initial empty file
-  const initialData = [];
-  const createRes = await saveVaultToGoogleDrive(accessToken, null, initialData);
-  return { fileId: createRes.fileId, items: initialData };
-}
-
-/**
- * Saves or updates the vault file directly in the user's Google Drive
- */
-export async function saveVaultToGoogleDrive(accessToken, fileId, items) {
-  const fileContent = JSON.stringify(items, null, 2);
-
-  if (fileId) {
-    // Update existing file (PATCH)
+    // 2. Update existing file content with CSV
     const updateRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
       method: 'PATCH',
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
+        'Content-Type': 'text/csv',
       },
-      body: fileContent,
+      body: csvData,
     });
-    if (!updateRes.ok) throw new Error('Failed to update Google Drive file');
-    return { fileId, success: true };
+
+    if (!updateRes.ok) {
+      const err = await updateRes.json().catch(() => ({}));
+      throw new Error(err.error?.message || 'Failed to update Google Sheet');
+    }
+
+    return {
+      fileId,
+      name: SHEET_NAME,
+      link: existingFile.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
+      updated: true
+    };
   } else {
-    // Create new file (POST multipart)
+    // 3. Create a brand new Native Google Sheet by converting CSV to application/vnd.google-apps.spreadsheet
     const metadata = {
-      name: VAULT_FILE_NAME,
-      mimeType: 'application/json',
-      description: 'Encrypted Credential Vault created by PCE Intelligence',
+      name: SHEET_NAME,
+      mimeType: 'application/vnd.google-apps.spreadsheet',
+      description: 'Encrypted Credential & 2FA Vault generated by PCE Intelligence',
     };
 
-    const boundary = '-------314159265358979323846';
+    const boundary = '-------pce_drive_upload_boundary_314159';
     const delimiter = `\r\n--${boundary}\r\n`;
     const closeDelim = `\r\n--${boundary}--`;
 
@@ -108,11 +147,11 @@ export async function saveVaultToGoogleDrive(accessToken, fileId, items) {
       'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
       JSON.stringify(metadata) +
       delimiter +
-      'Content-Type: application/json\r\n\r\n' +
-      fileContent +
+      'Content-Type: text/csv; charset=UTF-8\r\n\r\n' +
+      csvData +
       closeDelim;
 
-    const createRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    const createRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -121,20 +160,17 @@ export async function saveVaultToGoogleDrive(accessToken, fileId, items) {
       body: multipartRequestBody,
     });
 
-    if (!createRes.ok) throw new Error('Failed to create vault file on Google Drive');
-    const data = await createRes.json();
-    return { fileId: data.id, success: true };
-  }
-}
+    if (!createRes.ok) {
+      const err = await createRes.json().catch(() => ({}));
+      throw new Error(err.error?.message || 'Failed to create Google Sheet in your Drive');
+    }
 
-/**
- * Optional Google Sheets Webhook Sync (for users who prefer direct Google Sheet row sync)
- */
-export async function syncWithGoogleSheetWebhook(webhookUrl, items) {
-  const res = await fetch(webhookUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action: 'save', items }),
-  });
-  return res.json();
+    const createdData = await createRes.json();
+    return {
+      fileId: createdData.id,
+      name: createdData.name,
+      link: createdData.webViewLink || `https://docs.google.com/spreadsheets/d/${createdData.id}/edit`,
+      created: true
+    };
+  }
 }
