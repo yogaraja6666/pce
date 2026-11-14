@@ -43,53 +43,53 @@ export default function EmergencySOSModal({ isOpen, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
-      <div className="relative w-full max-w-xl bg-zinc-950 border border-zinc-800 rounded-2xl p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] space-y-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/40 backdrop-blur-sm animate-fadeIn">
+      <div className="relative w-full max-w-xl bg-white border border-zinc-200 rounded-2xl p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] space-y-6">
         
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 transition-all"
+          className="absolute top-5 right-5 p-2 rounded-lg text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 transition-all"
         >
           <X className="w-4 h-4" />
         </button>
 
         {/* Header */}
         <div className="space-y-1.5">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-medium">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
             <AlertTriangle className="w-3.5 h-3.5" />
             <span>Incident Response Protocol</span>
           </div>
-          <h2 className="text-xl font-semibold text-zinc-100">
+          <h2 className="text-xl font-semibold text-zinc-900">
             Account Compromise First-Aid
           </h2>
-          <p className="text-xs text-zinc-400">
+          <p className="text-xs text-zinc-500">
             Take immediate steps to revoke attacker access and notify your contacts.
           </p>
         </div>
 
         {/* Warning Template */}
-        <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-2.5">
+        <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200 space-y-2.5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-zinc-300">
+            <span className="text-xs font-semibold text-zinc-700">
               Broadcast Message for Contacts / Status
             </span>
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-md text-xs font-medium transition-all"
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-white hover:bg-zinc-100 border border-zinc-200 text-zinc-700 rounded-md text-xs font-medium transition-all shadow-2xs"
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-zinc-400" />}
               <span>{copied ? 'Copied' : 'Copy'}</span>
             </button>
           </div>
-          <p className="text-xs text-zinc-400 bg-zinc-950 p-3 rounded-lg border border-zinc-800/60 select-all font-mono leading-relaxed">
+          <p className="text-xs text-zinc-800 bg-white p-3 rounded-lg border border-zinc-200 select-all font-mono leading-relaxed">
             "{warningMessage}"
           </p>
         </div>
 
         {/* Platform Selector */}
         <div className="space-y-2">
-          <span className="text-xs font-medium text-zinc-400">Select Platform</span>
+          <span className="text-xs font-medium text-zinc-600">Select Platform</span>
           <div className="grid grid-cols-4 gap-2">
             {[
               { id: 'instagram', name: 'Instagram', icon: InstagramIcon },
@@ -104,8 +104,8 @@ export default function EmergencySOSModal({ isOpen, onClose }) {
                   onClick={() => setSelectedPlatform(p.id)}
                   className={`p-2.5 rounded-lg border text-xs font-medium flex flex-col items-center gap-1.5 transition-all ${
                     selectedPlatform === p.id
-                      ? 'bg-zinc-800 border-zinc-600 text-zinc-100'
-                      : 'bg-zinc-950 border-zinc-800/80 text-zinc-400 hover:text-zinc-200'
+                      ? 'bg-zinc-900 border-zinc-900 text-white font-semibold shadow-2xs'
+                      : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
@@ -117,22 +117,22 @@ export default function EmergencySOSModal({ isOpen, onClose }) {
         </div>
 
         {/* Remediation Guide */}
-        <div className="p-4 rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
+        <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200 space-y-3">
           {selectedPlatform === 'instagram' && (
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-zinc-200">Instagram Recovery Guide</span>
+                <span className="text-xs font-semibold text-zinc-900">Instagram Recovery Guide</span>
                 <a
                   href="https://instagram.com/hacked"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-zinc-300 hover:text-white underline underline-offset-2"
+                  className="inline-flex items-center gap-1 text-xs text-zinc-700 hover:text-zinc-950 underline underline-offset-2 font-medium"
                 >
                   <span>instagram.com/hacked</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
-              <ul className="text-xs text-zinc-400 space-y-1.5 list-disc pl-4 leading-relaxed">
+              <ul className="text-xs text-zinc-600 space-y-1.5 list-disc pl-4 leading-relaxed">
                 <li>If locked out, visit <strong>instagram.com/hacked</strong> and select "My account was hacked" to verify via phone/video selfie.</li>
                 <li>If you retain access, navigate to <strong>Settings → Accounts Center → Password and Security → Where you're logged in</strong> to terminate unfamiliar sessions.</li>
                 <li>Enable Two-Factor Authentication using an Authenticator app (avoid SMS if SIM-swap is suspected).</li>
@@ -142,8 +142,8 @@ export default function EmergencySOSModal({ isOpen, onClose }) {
 
           {selectedPlatform === 'whatsapp' && (
             <div className="space-y-2.5">
-              <span className="text-xs font-semibold text-zinc-200">WhatsApp Session Termination</span>
-              <ul className="text-xs text-zinc-400 space-y-1.5 list-disc pl-4 leading-relaxed">
+              <span className="text-xs font-semibold text-zinc-900">WhatsApp Session Termination</span>
+              <ul className="text-xs text-zinc-600 space-y-1.5 list-disc pl-4 leading-relaxed">
                 <li>Re-register WhatsApp on your primary phone by entering your phone number and verifying the 6-digit SMS code.</li>
                 <li>Verifying via SMS automatically logs out and terminates the intruder's active session.</li>
                 <li>Navigate to <strong>Settings → Linked Devices</strong> to revoke any active WhatsApp Web sessions.</li>
@@ -155,18 +155,18 @@ export default function EmergencySOSModal({ isOpen, onClose }) {
           {selectedPlatform === 'facebook' && (
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-zinc-200">Facebook Account Recovery</span>
+                <span className="text-xs font-semibold text-zinc-900">Facebook Account Recovery</span>
                 <a
                   href="https://facebook.com/hacked"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-zinc-300 hover:text-white underline underline-offset-2"
+                  className="inline-flex items-center gap-1 text-xs text-zinc-700 hover:text-zinc-950 underline underline-offset-2 font-medium"
                 >
                   <span>facebook.com/hacked</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
-              <ul className="text-xs text-zinc-400 space-y-1.5 list-disc pl-4 leading-relaxed">
+              <ul className="text-xs text-zinc-600 space-y-1.5 list-disc pl-4 leading-relaxed">
                 <li>Visit <strong>facebook.com/hacked</strong> to report account compromise.</li>
                 <li>Go to <strong>Settings & Privacy → Password and Security</strong> and select "Log out of all sessions".</li>
                 <li>Review third-party app permissions under "Apps and Websites".</li>
@@ -177,18 +177,18 @@ export default function EmergencySOSModal({ isOpen, onClose }) {
           {selectedPlatform === 'gmail' && (
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-zinc-200">Google Account Audit</span>
+                <span className="text-xs font-semibold text-zinc-900">Google Account Audit</span>
                 <a
                   href="https://myaccount.google.com/device-activity"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-zinc-300 hover:text-white underline underline-offset-2"
+                  className="inline-flex items-center gap-1 text-xs text-zinc-700 hover:text-zinc-950 underline underline-offset-2 font-medium"
                 >
                   <span>Device Activity</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
-              <ul className="text-xs text-zinc-400 space-y-1.5 list-disc pl-4 leading-relaxed">
+              <ul className="text-xs text-zinc-600 space-y-1.5 list-disc pl-4 leading-relaxed">
                 <li>Change your Google password immediately.</li>
                 <li>Visit <strong>myaccount.google.com/device-activity</strong> and sign out of unrecognized devices.</li>
                 <li>Check Gmail forwarding filters in Gmail Settings to ensure incoming mail is not being secretly redirected.</li>
@@ -198,17 +198,17 @@ export default function EmergencySOSModal({ isOpen, onClose }) {
         </div>
 
         {/* National Helpline */}
-        <div className="p-3.5 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-between">
+        <div className="p-3.5 rounded-xl bg-zinc-50 border border-zinc-200 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <PhoneCall className="w-4 h-4 text-zinc-400" />
+            <PhoneCall className="w-4 h-4 text-zinc-600" />
             <div>
-              <p className="text-xs font-medium text-zinc-200">National Cyber Crime Reporting Helpline</p>
+              <p className="text-xs font-semibold text-zinc-900">National Cyber Crime Reporting Helpline</p>
               <p className="text-[11px] text-zinc-500">For financial fraud or extortion, dial 1930 (India) or visit cybercrime.gov.in</p>
             </div>
           </div>
           <a
             href="tel:1930"
-            className="px-3 py-1.5 bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-medium rounded-lg transition-all"
+            className="px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold rounded-lg transition-all shadow-xs"
           >
             Call 1930
           </a>

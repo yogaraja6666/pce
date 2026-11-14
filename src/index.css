@@ -2,7 +2,7 @@
 
 @layer base {
   body {
-    @apply bg-[#09090b] text-zinc-100 antialiased min-h-screen selection:bg-zinc-800 selection:text-zinc-100;
+    @apply bg-[#fafafa] text-zinc-900 antialiased min-h-screen selection:bg-zinc-200 selection:text-zinc-900;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
 }

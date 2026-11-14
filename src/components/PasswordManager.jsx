@@ -198,7 +198,7 @@ export default function PasswordManager() {
         expiryDate,
         text: `Expired ${Math.abs(daysLeft)}d ago`,
         status: 'expired',
-        badgeColor: 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+        badgeColor: 'bg-rose-50 text-rose-700 border-rose-200'
       };
     } else if (daysLeft <= 14) {
       return {
@@ -206,7 +206,7 @@ export default function PasswordManager() {
         expiryDate,
         text: `${daysLeft} days to change`,
         status: 'warning',
-        badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+        badgeColor: 'bg-amber-50 text-amber-800 border-amber-200'
       };
     } else {
       return {
@@ -214,7 +214,7 @@ export default function PasswordManager() {
         expiryDate,
         text: `${daysLeft} days to change`,
         status: 'good',
-        badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+        badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200'
       };
     }
   };
@@ -332,31 +332,31 @@ export default function PasswordManager() {
   // -------------------------------------------------------------
   if (!googleUser) {
     return (
-      <div className="w-full max-w-md mx-auto p-6 md:p-8 rounded-3xl bg-zinc-950 border border-zinc-800 space-y-6 shadow-2xl text-center">
+      <div className="w-full max-w-md mx-auto p-6 md:p-8 rounded-3xl bg-white border border-zinc-200 space-y-6 shadow-sm text-center">
         
         {/* Security Icon */}
-        <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-100 flex items-center justify-center mx-auto shadow-md">
-          <Cloud className="w-7 h-7 text-emerald-400" />
+        <div className="w-14 h-14 rounded-2xl bg-zinc-50 border border-zinc-200 text-zinc-900 flex items-center justify-center mx-auto shadow-2xs">
+          <Cloud className="w-7 h-7 text-emerald-600" />
         </div>
 
         <div className="space-y-2">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
-            <ShieldCheck className="w-3.5 h-3.5" />
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
             <span>Zero Server Database • Auto Google Drive Sync</span>
           </div>
 
-          <h2 className="text-2xl font-bold text-zinc-100 tracking-tight">
+          <h2 className="text-2xl font-bold text-zinc-900 tracking-tight">
             Sign In with Google Account
           </h2>
 
-          <p className="text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto">
+          <p className="text-xs text-zinc-500 leading-relaxed max-w-sm mx-auto">
             Sign in once to automatically connect your personal Google Drive. New accounts get a fresh sheet; returning accounts automatically sync existing credentials.
           </p>
         </div>
 
         {inactivityNotice && (
-          <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs rounded-xl flex items-center gap-2">
-            <Timer className="w-4 h-4 shrink-0" />
+          <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl flex items-center gap-2">
+            <Timer className="w-4 h-4 shrink-0 text-amber-600" />
             <span>{inactivityNotice}</span>
           </div>
         )}
@@ -366,7 +366,7 @@ export default function PasswordManager() {
           <button
             onClick={handleGoogleSignIn}
             disabled={authLoading}
-            className="w-full py-3.5 px-5 bg-white hover:bg-zinc-100 disabled:opacity-50 text-zinc-950 font-semibold text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-3 border border-zinc-200"
+            className="w-full py-3.5 px-5 bg-white hover:bg-zinc-50 disabled:opacity-50 text-zinc-800 font-semibold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-3 border border-zinc-200"
           >
             {authLoading ? (
               <>
@@ -388,31 +388,31 @@ export default function PasswordManager() {
         </div>
 
         {/* Security Feature Highlights */}
-        <div className="pt-3 border-t border-zinc-900 grid grid-cols-2 gap-2 text-[11px] text-zinc-500 text-left">
+        <div className="pt-3 border-t border-zinc-100 grid grid-cols-2 gap-2 text-[11px] text-zinc-600 text-left">
           <div className="flex items-center gap-1.5">
-            <Check className="w-3.5 h-3.5 text-emerald-400" />
+            <Check className="w-3.5 h-3.5 text-emerald-600" />
             <span>Auto-logout on page refresh</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <Check className="w-3.5 h-3.5 text-emerald-400" />
+            <Check className="w-3.5 h-3.5 text-emerald-600" />
             <span>5-min inactivity lock</span>
           </div>
         </div>
 
         {authError && (
-          <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs text-left space-y-1">
+          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs text-left space-y-1">
             <p className="font-semibold flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
               <span>{authError}</span>
             </p>
             {authError.includes('403') || authError.includes('verification') ? (
-              <p className="text-[11px] text-rose-200">
+              <p className="text-[11px] text-rose-700">
                 👉 Add your email under <strong>Test Users</strong> at{' '}
                 <a 
                   href="https://console.cloud.google.com/apis/credentials/consent" 
                   target="_blank" 
                   rel="noopener noreferrer" 
-                  className="underline font-bold text-white"
+                  className="underline font-bold text-rose-950"
                 >
                   OAuth Consent Screen
                 </a>.
@@ -433,33 +433,33 @@ export default function PasswordManager() {
       
       {/* Toast Notification */}
       {saveToast && (
-        <div className="fixed bottom-6 right-6 z-50 p-4 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-100 text-xs shadow-2xl flex items-center gap-2.5 animate-fadeIn">
+        <div className="fixed bottom-6 right-6 z-50 p-4 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs shadow-2xl flex items-center gap-2.5 animate-fadeIn">
           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           <span>{saveToast}</span>
         </div>
       )}
 
       {/* Top Header Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 rounded-2xl bg-zinc-900/40 border border-zinc-800">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 rounded-2xl bg-white border border-zinc-200 shadow-xs">
         <div className="flex items-center gap-3">
           {googleUser.picture ? (
-            <img src={googleUser.picture} alt="" className="w-10 h-10 rounded-full border border-zinc-700" />
+            <img src={googleUser.picture} alt="" className="w-10 h-10 rounded-full border border-zinc-200" />
           ) : (
-            <div className="w-10 h-10 rounded-full bg-zinc-800 text-zinc-200 flex items-center justify-center font-bold text-sm">
+            <div className="w-10 h-10 rounded-full bg-zinc-100 text-zinc-800 flex items-center justify-center font-bold text-sm border border-zinc-200">
               {googleUser.name.slice(0, 1)}
             </div>
           )}
           <div>
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <h2 className="text-base font-semibold text-zinc-100">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <h2 className="text-base font-semibold text-zinc-900">
                 {googleUser.name}
               </h2>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
                 Google Drive Synced
               </span>
             </div>
-            <p className="text-xs text-zinc-400 mt-0.5">
+            <p className="text-xs text-zinc-500 mt-0.5">
               {googleUser.email} • Managing {vaultItems.length} accounts
             </p>
           </div>
@@ -474,7 +474,7 @@ export default function PasswordManager() {
               setEditingItem(null);
               setShowAddModal(true);
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-white text-zinc-950 rounded-lg text-xs font-semibold transition-all shadow-sm"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-lg text-xs font-semibold transition-all shadow-xs"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add Account</span>
@@ -486,7 +486,7 @@ export default function PasswordManager() {
               href={sheetLink}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-sm transition-all"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-all"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>Open Google Sheet</span>
@@ -497,7 +497,7 @@ export default function PasswordManager() {
           {/* Sign Out */}
           <button
             onClick={() => handleSignOut()}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 rounded-lg text-xs font-medium transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 text-zinc-700 hover:text-zinc-900 rounded-lg text-xs font-medium transition-all"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span>Sign Out</span>
@@ -506,14 +506,14 @@ export default function PasswordManager() {
       </div>
 
       {/* Security Status Ribbon */}
-      <div className="flex items-center justify-between px-4 py-2 bg-zinc-900/30 border border-zinc-800/60 rounded-xl text-[11px] text-zinc-400">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-[11px] text-zinc-600">
         <span className="flex items-center gap-1.5">
-          <Cloud className="w-3.5 h-3.5 text-emerald-400" />
+          <Cloud className="w-3.5 h-3.5 text-emerald-600" />
           <span>Synced with: <strong>{SHEET_NAME}</strong> in your Google Drive</span>
-          {isDriveSyncing && <RefreshCw className="w-3 h-3 animate-spin text-emerald-400 ml-1" />}
+          {isDriveSyncing && <RefreshCw className="w-3 h-3 animate-spin text-emerald-600 ml-1" />}
         </span>
         <span className="flex items-center gap-1 text-zinc-500">
-          <Timer className="w-3 h-3" />
+          <Timer className="w-3 h-3 text-zinc-400" />
           <span>Auto-locks on page refresh & inactivity</span>
         </span>
       </div>
@@ -525,16 +525,16 @@ export default function PasswordManager() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search Gmail, Microsoft, Reddit, X..."
-          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 pl-9 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-600"
+          className="w-full bg-white border border-zinc-200 rounded-xl px-3.5 py-2 pl-9 text-xs text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-900 shadow-2xs"
         />
-        <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+        <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
       </div>
 
       {/* Account Items List */}
       {filteredItems.length === 0 ? (
-        <div className="p-12 text-center rounded-2xl bg-zinc-900/20 border border-zinc-800/80 space-y-3">
-          <KeyRound className="w-8 h-8 text-zinc-600 mx-auto" />
-          <h3 className="text-sm font-semibold text-zinc-300">
+        <div className="p-12 text-center rounded-2xl bg-white border border-zinc-200 space-y-3 shadow-2xs">
+          <KeyRound className="w-8 h-8 text-zinc-400 mx-auto" />
+          <h3 className="text-sm font-semibold text-zinc-900">
             {vaultItems.length === 0 ? 'No accounts stored in your Google Sheet yet' : 'No matching accounts found'}
           </h3>
           <p className="text-xs text-zinc-500 max-w-md mx-auto">
@@ -556,17 +556,17 @@ export default function PasswordManager() {
             return (
               <div
                 key={item.id}
-                className="p-4 md:p-5 rounded-2xl bg-zinc-950 border border-zinc-800/90 hover:border-zinc-700 transition-all space-y-3"
+                className="p-4 md:p-5 rounded-2xl bg-white border border-zinc-200 hover:border-zinc-300 hover:shadow-xs transition-all space-y-3 shadow-2xs"
               >
                 {/* Header Row: Provider + Username + Countdown */}
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center font-bold text-xs text-zinc-200">
+                    <div className="w-9 h-9 rounded-xl bg-zinc-100 border border-zinc-200 flex items-center justify-center font-bold text-xs text-zinc-800">
                       {item.providerName.slice(0, 2).toUpperCase()}
                     </div>
                     <div>
-                      <h4 className="font-semibold text-zinc-100 text-sm">{item.providerName}</h4>
-                      <p className="text-xs text-zinc-400 font-mono">{item.username}</p>
+                      <h4 className="font-semibold text-zinc-900 text-sm">{item.providerName}</h4>
+                      <p className="text-xs text-zinc-500 font-mono">{item.username}</p>
                     </div>
                   </div>
 
@@ -579,7 +579,7 @@ export default function PasswordManager() {
                     </div>
 
                     {/* Security Score Badge */}
-                    <span className={`text-[11px] font-medium px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800 ${scoreInfo.color}`}>
+                    <span className={`text-[11px] font-medium px-2 py-0.5 rounded bg-zinc-50 border border-zinc-200 ${scoreInfo.color}`}>
                       {scoreInfo.label} ({scoreInfo.score}%)
                     </span>
 
@@ -601,7 +601,7 @@ export default function PasswordManager() {
                         });
                         setShowAddModal(true);
                       }}
-                      className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 rounded-lg transition-all"
+                      className="p-1.5 text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 rounded-lg transition-all"
                       title="Edit Account"
                     >
                       <Edit3 className="w-3.5 h-3.5" />
@@ -609,7 +609,7 @@ export default function PasswordManager() {
 
                     <button
                       onClick={() => handleDeleteItem(item.id)}
-                      className="p-1.5 text-zinc-500 hover:text-rose-400 hover:bg-zinc-900 rounded-lg transition-all"
+                      className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
                       title="Delete Account"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -618,26 +618,26 @@ export default function PasswordManager() {
                 </div>
 
                 {/* Password & Credential Row */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-zinc-900 text-xs">
-                  <div className="flex items-center gap-2 font-mono bg-zinc-900/60 px-3 py-1.5 rounded-xl border border-zinc-850">
-                    <span className="text-zinc-500">Password:</span>
-                    <span className="text-zinc-200 select-all tracking-wider">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-zinc-100 text-xs">
+                  <div className="flex items-center gap-2 font-mono bg-zinc-50 px-3 py-1.5 rounded-xl border border-zinc-200">
+                    <span className="text-zinc-500 font-sans">Password:</span>
+                    <span className="text-zinc-900 select-all tracking-wider font-semibold">
                       {isPwVisible ? item.password : '••••••••••••••••'}
                     </span>
                     <button
                       type="button"
                       onClick={() => setVisiblePasswords(prev => ({ ...prev, [item.id]: !isPwVisible }))}
-                      className="text-zinc-500 hover:text-zinc-300 p-0.5 ml-1"
+                      className="text-zinc-400 hover:text-zinc-700 p-0.5 ml-1"
                     >
                       {isPwVisible ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                     </button>
                     <button
                       type="button"
                       onClick={() => handleCopy(item.password, `pw_${item.id}`)}
-                      className="text-zinc-400 hover:text-zinc-100 p-0.5 ml-1"
+                      className="text-zinc-400 hover:text-zinc-700 p-0.5 ml-1"
                       title="Copy password"
                     >
-                      {copiedId === `pw_${item.id}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      {copiedId === `pw_${item.id}` ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                     </button>
                   </div>
 
@@ -646,10 +646,10 @@ export default function PasswordManager() {
                     {item.backupCodes && (
                       <button
                         onClick={() => handleCopy(item.backupCodes, `codes_${item.id}`)}
-                        className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded-lg text-[11px] transition-all"
+                        className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-700 rounded-lg text-[11px] transition-all"
                         title="Copy 2FA Backup Codes"
                       >
-                        {copiedId === `codes_${item.id}` ? <Check className="w-3 h-3 text-emerald-400" /> : <ShieldCheck className="w-3 h-3 text-cyan-400" />}
+                        {copiedId === `codes_${item.id}` ? <Check className="w-3 h-3 text-emerald-600" /> : <ShieldCheck className="w-3 h-3 text-blue-600" />}
                         <span>2FA Codes ({item.backupCodes.split('\n').filter(Boolean).length})</span>
                       </button>
                     )}
@@ -659,10 +659,10 @@ export default function PasswordManager() {
                       href={taskReminderUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1 px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 rounded-lg text-[11px] transition-all"
+                      className="flex items-center gap-1 px-2.5 py-1 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-600 hover:text-zinc-900 rounded-lg text-[11px] transition-all"
                       title="Set reminder in Google Tasks / Calendar for rotation day"
                     >
-                      <Bell className="w-3 h-3 text-amber-400" />
+                      <Bell className="w-3 h-3 text-amber-500" />
                       <span>Set Google Task Reminder</span>
                     </a>
                   </div>
@@ -673,9 +673,9 @@ export default function PasswordManager() {
                   <div className="flex items-center gap-3">
                     <span>Created: {new Date(item.createdDate || Date.now()).toLocaleDateString()}</span>
                     <span>•</span>
-                    <span className="text-zinc-400 font-medium">Last Changed: {new Date(item.lastChangedDate || Date.now()).toLocaleDateString()}</span>
+                    <span className="text-zinc-700 font-medium">Last Changed: {new Date(item.lastChangedDate || Date.now()).toLocaleDateString()}</span>
                   </div>
-                  {item.notes && <span className="italic">{item.notes}</span>}
+                  {item.notes && <span className="italic text-zinc-500">{item.notes}</span>}
                 </div>
               </div>
             );
@@ -687,21 +687,21 @@ export default function PasswordManager() {
           MODAL: ADD / EDIT CREDENTIAL
       -------------------------------------------------------------- */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-          <div className="relative w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-3xl p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] space-y-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/40 backdrop-blur-sm animate-fadeIn">
+          <div className="relative w-full max-w-lg bg-white border border-zinc-200 rounded-3xl p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] space-y-5">
             
             <button
               onClick={() => setShowAddModal(false)}
-              className="absolute top-5 right-5 p-2 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
+              className="absolute top-5 right-5 p-2 rounded-xl text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 transition-all"
             >
               <X className="w-4 h-4" />
             </button>
 
             <div className="space-y-1">
-              <h3 className="text-lg font-bold text-zinc-100">
+              <h3 className="text-lg font-bold text-zinc-900">
                 {editingItem ? 'Edit Credential' : 'Add Account Credential'}
               </h3>
-              <p className="text-xs text-zinc-400">
+              <p className="text-xs text-zinc-500">
                 Saved directly to your Google Sheet in Google Drive. Zero database on our servers.
               </p>
             </div>
@@ -710,7 +710,7 @@ export default function PasswordManager() {
               
               {/* Provider Preset Selector */}
               <div className="space-y-1.5">
-                <label className="text-zinc-300 font-medium">Provider / Platform</label>
+                <label className="text-zinc-700 font-semibold">Provider / Platform</label>
                 <div className="grid grid-cols-3 gap-1.5">
                   {PROVIDER_PRESETS.map((p) => (
                     <button
@@ -719,8 +719,8 @@ export default function PasswordManager() {
                       onClick={() => setFormData({ ...formData, provider: p.id })}
                       className={`p-2 rounded-xl border text-left font-medium transition-all ${
                         formData.provider === p.id
-                          ? 'bg-zinc-800 border-zinc-600 text-zinc-100'
-                          : 'bg-zinc-900/60 border-zinc-800/80 text-zinc-400 hover:text-zinc-200'
+                          ? 'bg-zinc-900 border-zinc-900 text-white font-semibold shadow-2xs'
+                          : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
                       }`}
                     >
                       {p.name}
@@ -731,36 +731,36 @@ export default function PasswordManager() {
 
               {formData.provider === 'custom' && (
                 <div className="space-y-1">
-                  <label className="text-zinc-300 font-medium">Custom Provider Name</label>
+                  <label className="text-zinc-700 font-semibold">Custom Provider Name</label>
                   <input
                     type="text"
                     value={formData.customName}
                     onChange={(e) => setFormData({ ...formData, customName: e.target.value })}
                     placeholder="e.g. Netflix, Bank, Discord, Slack"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2 text-zinc-100 focus:outline-none focus:border-zinc-600"
+                    className="w-full bg-white border border-zinc-200 rounded-xl px-3.5 py-2 text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-900 shadow-2xs"
                   />
                 </div>
               )}
 
               {/* User ID / Email */}
               <div className="space-y-1">
-                <label className="text-zinc-300 font-medium">User ID / Username / Email</label>
+                <label className="text-zinc-700 font-semibold">User ID / Username / Email</label>
                 <input
                   type="text"
                   required
                   value={formData.username}
                   onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                   placeholder="e.g. yourname@gmail.com or @handle"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2 text-zinc-100 focus:outline-none focus:border-zinc-600"
+                  className="w-full bg-white border border-zinc-200 rounded-xl px-3.5 py-2 text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-900 shadow-2xs"
                 />
               </div>
 
               {/* Password */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <label className="text-zinc-300 font-medium">Account Password</label>
+                  <label className="text-zinc-700 font-semibold">Account Password</label>
                   {formData.password && (
-                    <span className={`text-[10px] ${calculatePasswordScore(formData.password).color}`}>
+                    <span className={`text-[10px] font-medium ${calculatePasswordScore(formData.password).color}`}>
                       Strength: {calculatePasswordScore(formData.password).label} ({calculatePasswordScore(formData.password).score}%)
                     </span>
                   )}
@@ -771,7 +771,7 @@ export default function PasswordManager() {
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   placeholder="Enter or generate password"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2 text-zinc-100 font-mono focus:outline-none focus:border-zinc-600"
+                  className="w-full bg-white border border-zinc-200 rounded-xl px-3.5 py-2 text-zinc-900 font-mono focus:outline-none focus:border-zinc-900 shadow-2xs"
                 />
               </div>
 
@@ -783,29 +783,29 @@ export default function PasswordManager() {
               {/* 2FA Backup Codes */}
               <div className="space-y-1 pt-1">
                 <div className="flex items-center justify-between">
-                  <label className="text-zinc-300 font-medium flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+                  <label className="text-zinc-700 font-semibold flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
                     <span>2-Factor Authentication (2FA) Backup Codes</span>
                   </label>
-                  <span className="text-[10px] text-zinc-500">Optional</span>
+                  <span className="text-[10px] text-zinc-400">Optional</span>
                 </div>
                 <textarea
                   rows={3}
                   value={formData.backupCodes}
                   onChange={(e) => setFormData({ ...formData, backupCodes: e.target.value })}
                   placeholder="Paste 8-digit emergency backup recovery codes (one per line)"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-2.5 text-zinc-100 font-mono text-[11px] focus:outline-none focus:border-zinc-600"
+                  className="w-full bg-white border border-zinc-200 rounded-xl p-2.5 text-zinc-900 font-mono text-[11px] focus:outline-none focus:border-zinc-900 shadow-2xs"
                 />
               </div>
 
               {/* Rotation Countdown Days */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <label className="text-zinc-300 font-medium flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-amber-400" />
+                  <label className="text-zinc-700 font-semibold flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-amber-500" />
                     <span>Password Rotation Interval</span>
                   </label>
-                  <span className="text-zinc-400 font-mono">{formData.rotationDays} Days Cycle</span>
+                  <span className="text-zinc-600 font-mono font-medium">{formData.rotationDays} Days Cycle</span>
                 </div>
                 <div className="flex gap-2">
                   {[30, 60, 90, 180].map((d) => (
@@ -813,10 +813,10 @@ export default function PasswordManager() {
                       key={d}
                       type="button"
                       onClick={() => setFormData({ ...formData, rotationDays: d })}
-                      className={`flex-1 py-1.5 rounded-lg border text-center font-medium ${
+                      className={`flex-1 py-1.5 rounded-lg border text-center font-medium transition-all ${
                         formData.rotationDays === d
-                          ? 'bg-zinc-800 border-zinc-600 text-zinc-100'
-                          : 'bg-zinc-900/60 border-zinc-800 text-zinc-500 hover:text-zinc-300'
+                          ? 'bg-zinc-900 border-zinc-900 text-white font-semibold shadow-2xs'
+                          : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
                       }`}
                     >
                       {d}d
@@ -827,18 +827,18 @@ export default function PasswordManager() {
 
               {/* Notes */}
               <div className="space-y-1">
-                <label className="text-zinc-300 font-medium">Notes / Security Hints</label>
+                <label className="text-zinc-700 font-semibold">Notes / Security Hints</label>
                 <input
                   type="text"
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   placeholder="Optional notes"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2 text-zinc-100 focus:outline-none focus:border-zinc-600"
+                  className="w-full bg-white border border-zinc-200 rounded-xl px-3.5 py-2 text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-900 shadow-2xs"
                 />
               </div>
 
               {modalError && (
-                <p className="text-rose-400 text-xs flex items-center gap-1">
+                <p className="text-rose-600 text-xs flex items-center gap-1 font-medium">
                   <AlertTriangle className="w-3.5 h-3.5" />
                   {modalError}
                 </p>
@@ -848,13 +848,13 @@ export default function PasswordManager() {
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 rounded-xl transition-all"
+                  className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl font-medium transition-all"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-zinc-100 hover:bg-white text-zinc-950 font-semibold rounded-xl transition-all shadow-sm"
+                  className="px-5 py-2 bg-zinc-900 hover:bg-zinc-800 text-white font-semibold rounded-xl transition-all shadow-xs"
                 >
                   {editingItem ? 'Save Changes' : 'Save to Google Sheet'}
                 </button>

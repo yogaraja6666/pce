@@ -37,49 +37,49 @@ export default function PasswordGenerator({ onSelectPassword }) {
   const scoreInfo = calculatePasswordScore(password);
 
   return (
-    <div className="p-5 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-4">
+    <div className="p-5 rounded-2xl bg-white border border-zinc-200 shadow-xs space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Sliders className="w-4 h-4 text-emerald-400" />
-          <span className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+          <Sliders className="w-4 h-4 text-emerald-600" />
+          <span className="text-xs font-semibold uppercase tracking-wider text-zinc-700">
             Military-Grade Password Generator
           </span>
         </div>
-        <span className={`text-xs font-medium ${scoreInfo.color}`}>
+        <span className={`text-xs font-semibold ${scoreInfo.color}`}>
           {scoreInfo.label} ({scoreInfo.score}/100)
         </span>
       </div>
 
       {/* Generated Password Display */}
-      <div className="relative flex items-center bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3">
+      <div className="relative flex items-center bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 shadow-2xs">
         <input
           type="text"
           readOnly
           value={password}
-          className="w-full bg-transparent font-mono text-sm sm:text-base text-zinc-100 pr-20 select-all focus:outline-none tracking-wider"
+          className="w-full bg-transparent font-mono text-sm sm:text-base text-zinc-900 pr-20 select-all focus:outline-none tracking-wider font-medium"
         />
         <div className="absolute right-2 flex items-center gap-1.5">
           <button
             type="button"
             onClick={generate}
             title="Generate new password"
-            className="p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-all"
+            className="p-1.5 text-zinc-500 hover:text-zinc-800 hover:bg-zinc-200/60 rounded-lg transition-all"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
           <button
             type="button"
             onClick={handleCopy}
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-medium rounded-lg transition-all"
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-800 text-xs font-medium rounded-lg transition-all shadow-2xs"
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-zinc-500" />}
             <span>{copied ? 'Copied' : 'Copy'}</span>
           </button>
         </div>
       </div>
 
       {/* Strength Bar */}
-      <div className="w-full h-1.5 bg-zinc-900 rounded-full overflow-hidden">
+      <div className="w-full h-1.5 bg-zinc-100 rounded-full overflow-hidden">
         <div
           className={`h-full ${scoreInfo.barColor} transition-all duration-300`}
           style={{ width: `${scoreInfo.score}%` }}
@@ -88,16 +88,16 @@ export default function PasswordGenerator({ onSelectPassword }) {
 
       {/* Controls */}
       <div className="space-y-3 pt-2 text-xs">
-        <div className="flex items-center justify-between text-zinc-400">
-          <span>Password Length: <strong className="text-zinc-100 font-mono text-sm">{length}</strong></span>
+        <div className="flex items-center justify-between text-zinc-600">
+          <span>Password Length: <strong className="text-zinc-900 font-mono text-sm">{length}</strong></span>
           <div className="flex gap-1.5">
             {[16, 24, 32].map((len) => (
               <button
                 key={len}
                 type="button"
                 onClick={() => setLength(len)}
-                className={`px-2 py-0.5 rounded border ${
-                  length === len ? 'bg-zinc-800 border-zinc-600 text-zinc-100' : 'bg-zinc-950 border-zinc-800 text-zinc-500'
+                className={`px-2.5 py-0.5 rounded-lg border text-xs transition-all ${
+                  length === len ? 'bg-zinc-900 border-zinc-900 text-white font-semibold shadow-2xs' : 'bg-zinc-100 border-zinc-200 text-zinc-600 hover:bg-zinc-200/60 font-medium'
                 }`}
               >
                 {len}
@@ -112,47 +112,47 @@ export default function PasswordGenerator({ onSelectPassword }) {
           max={64}
           value={length}
           onChange={(e) => setLength(Number(e.target.value))}
-          className="w-full accent-emerald-500 bg-zinc-900 rounded-lg h-1.5 cursor-pointer"
+          className="w-full accent-emerald-600 bg-zinc-200 rounded-lg h-1.5 cursor-pointer"
         />
 
         {/* Checkbox Options */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-zinc-400">
-          <label className="flex items-center gap-2 cursor-pointer hover:text-zinc-200">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-zinc-700">
+          <label className="flex items-center gap-2 cursor-pointer hover:text-zinc-900 font-medium">
             <input
               type="checkbox"
               checked={uppercase}
               onChange={(e) => setUppercase(e.target.checked)}
-              className="accent-emerald-500 rounded"
+              className="accent-emerald-600 rounded"
             />
             <span>A-Z (Upper)</span>
           </label>
 
-          <label className="flex items-center gap-2 cursor-pointer hover:text-zinc-200">
+          <label className="flex items-center gap-2 cursor-pointer hover:text-zinc-900 font-medium">
             <input
               type="checkbox"
               checked={lowercase}
               onChange={(e) => setLowercase(e.target.checked)}
-              className="accent-emerald-500 rounded"
+              className="accent-emerald-600 rounded"
             />
             <span>a-z (Lower)</span>
           </label>
 
-          <label className="flex items-center gap-2 cursor-pointer hover:text-zinc-200">
+          <label className="flex items-center gap-2 cursor-pointer hover:text-zinc-900 font-medium">
             <input
               type="checkbox"
               checked={numbers}
               onChange={(e) => setNumbers(e.target.checked)}
-              className="accent-emerald-500 rounded"
+              className="accent-emerald-600 rounded"
             />
             <span>0-9 (Numbers)</span>
           </label>
 
-          <label className="flex items-center gap-2 cursor-pointer hover:text-zinc-200">
+          <label className="flex items-center gap-2 cursor-pointer hover:text-zinc-900 font-medium">
             <input
               type="checkbox"
               checked={symbols}
               onChange={(e) => setSymbols(e.target.checked)}
-              className="accent-emerald-500 rounded"
+              className="accent-emerald-600 rounded"
             />
             <span>!@#$ (Symbols)</span>
           </label>
@@ -163,7 +163,7 @@ export default function PasswordGenerator({ onSelectPassword }) {
         <button
           type="button"
           onClick={() => onSelectPassword(password)}
-          className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-medium transition-all shadow-sm"
+          className="w-full py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold transition-all shadow-xs"
         >
           Use This Password in Account
         </button>

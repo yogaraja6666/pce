@@ -94,40 +94,40 @@ export default function BreachScanner() {
   return (
     <div className="w-full max-w-3xl mx-auto space-y-6">
       {/* Tab Selector */}
-      <div className="flex p-1 bg-zinc-900/60 border border-zinc-800/80 rounded-xl">
+      <div className="flex p-1 bg-zinc-100 border border-zinc-200/80 rounded-xl">
         <button
           onClick={() => setActiveTab('email')}
-          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-medium transition-all ${
+          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs transition-all ${
             activeTab === 'email'
-              ? 'bg-zinc-800 text-zinc-100 shadow-sm'
-              : 'text-zinc-400 hover:text-zinc-200'
+              ? 'bg-white text-zinc-900 shadow-xs border border-zinc-200/60 font-semibold'
+              : 'text-zinc-600 hover:text-zinc-900 font-medium'
           }`}
         >
-          <Database className="w-3.5 h-3.5" />
+          <Database className="w-3.5 h-3.5 text-zinc-500" />
           <span>Email Breach Radar</span>
         </button>
 
         <button
           onClick={() => setActiveTab('password')}
-          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-medium transition-all ${
+          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs transition-all ${
             activeTab === 'password'
-              ? 'bg-zinc-800 text-zinc-100 shadow-sm'
-              : 'text-zinc-400 hover:text-zinc-200'
+              ? 'bg-white text-zinc-900 shadow-xs border border-zinc-200/60 font-semibold'
+              : 'text-zinc-600 hover:text-zinc-900 font-medium'
           }`}
         >
-          <KeyRound className="w-3.5 h-3.5" />
+          <KeyRound className="w-3.5 h-3.5 text-zinc-500" />
           <span>Password Leak Checker</span>
         </button>
       </div>
 
       {/* TAB 1: EMAIL BREACH SCANNER */}
       {activeTab === 'email' && (
-        <div className="bg-zinc-900/30 border border-zinc-800/60 rounded-2xl p-6 md:p-8 space-y-6">
+        <div className="bg-white border border-zinc-200 shadow-xs rounded-2xl p-6 md:p-8 space-y-6">
           <div className="space-y-1.5">
-            <h2 className="text-xl font-semibold text-zinc-100 tracking-tight">
+            <h2 className="text-xl font-semibold text-zinc-900 tracking-tight">
               Scan Email Across Data Breaches
             </h2>
-            <p className="text-xs md:text-sm text-zinc-400 leading-relaxed">
+            <p className="text-xs md:text-sm text-zinc-500 leading-relaxed">
               Check if your email or associated credentials have been exposed in public hacker databases and stealer logs.
             </p>
           </div>
@@ -140,13 +140,13 @@ export default function BreachScanner() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@example.com"
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 pl-11 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600 text-sm transition-all"
+                className="w-full bg-zinc-50 focus:bg-white border border-zinc-200 rounded-xl px-4 py-3 pl-11 text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 text-sm transition-all shadow-2xs"
               />
-              <Search className="w-4 h-4 text-zinc-500 absolute left-4 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2" />
               <button
                 type="submit"
                 disabled={emailLoading}
-                className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-medium rounded-lg transition-all disabled:opacity-50 flex items-center gap-2 shadow-sm"
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold rounded-lg transition-all disabled:opacity-50 flex items-center gap-2 shadow-xs"
               >
                 {emailLoading ? (
                   <>
@@ -164,14 +164,14 @@ export default function BreachScanner() {
               <button
                 type="button"
                 onClick={() => setEmail('test@gmail.com')}
-                className="text-zinc-400 hover:text-zinc-200 underline underline-offset-2"
+                className="text-zinc-600 hover:text-zinc-900 underline underline-offset-2"
               >
                 test@gmail.com
               </button>
             </div>
 
             {emailError && (
-              <p className="text-rose-400 text-xs flex items-center gap-1.5 pt-1">
+              <p className="text-rose-600 text-xs flex items-center gap-1.5 pt-1">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                 {emailError}
               </p>
@@ -180,28 +180,28 @@ export default function BreachScanner() {
 
           {/* RESULTS */}
           {emailResult && (
-            <div className="pt-4 border-t border-zinc-800/60 space-y-5">
+            <div className="pt-4 border-t border-zinc-200 space-y-5">
               {emailResult.found ? (
                 /* BREACH FOUND */
                 <div className="space-y-5">
                   {/* Summary Card */}
-                  <div className="p-5 rounded-xl bg-zinc-950 border border-zinc-800 space-y-3">
+                  <div className="p-5 rounded-xl bg-rose-50/70 border border-rose-200 space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-                        <span className="text-xs font-semibold uppercase tracking-wider text-rose-400">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-rose-700">
                           {emailResult.riskLabel} Exposure
                         </span>
                       </div>
-                      <span className="text-xs text-zinc-400 font-mono">
+                      <span className="text-xs text-zinc-500 font-mono">
                         Risk Score: {emailResult.riskScore}/100
                       </span>
                     </div>
 
-                    <h3 className="text-base font-semibold text-zinc-100">
+                    <h3 className="text-base font-semibold text-zinc-900">
                       Identified in {emailResult.count} Security {emailResult.count === 1 ? 'Incident' : 'Incidents'}
                     </h3>
-                    <p className="text-xs text-zinc-400 leading-relaxed">
+                    <p className="text-xs text-zinc-600 leading-relaxed">
                       Credentials associated with this email address exist in public breach repositories. Hackers frequently use these lists for automated account takeover attacks.
                     </p>
                   </div>
@@ -209,7 +209,7 @@ export default function BreachScanner() {
                   {/* Exposed Data Types */}
                   {emailResult.exposedDataTypes.length > 0 && (
                     <div className="space-y-2">
-                      <span className="text-xs font-medium text-zinc-400">
+                      <span className="text-xs font-medium text-zinc-600">
                         Compromised Data Categories
                       </span>
                       <div className="flex flex-wrap gap-1.5">
@@ -218,8 +218,8 @@ export default function BreachScanner() {
                             key={idx}
                             className={`px-2.5 py-1 rounded-md text-xs font-medium border ${
                               type.toLowerCase().includes('password')
-                                ? 'bg-rose-500/10 border-rose-500/20 text-rose-300'
-                                : 'bg-zinc-900 border-zinc-800 text-zinc-300'
+                                ? 'bg-rose-100 border-rose-200 text-rose-800 font-semibold'
+                                : 'bg-zinc-100 border-zinc-200 text-zinc-700'
                             }`}
                           >
                             {type}
@@ -230,11 +230,11 @@ export default function BreachScanner() {
                   )}
 
                   {/* Recommended Action Checklist */}
-                  <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800 text-xs text-zinc-300 space-y-2">
-                    <span className="font-semibold text-zinc-200 block">
+                  <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200 text-xs text-zinc-700 space-y-2">
+                    <span className="font-semibold text-zinc-900 block">
                       Recommended Remediation
                     </span>
-                    <ul className="space-y-1.5 list-disc pl-4 text-zinc-400 leading-relaxed">
+                    <ul className="space-y-1.5 list-disc pl-4 text-zinc-600 leading-relaxed">
                       <li>Update passwords on all accounts sharing this email address.</li>
                       <li>Enable application-based Two-Factor Authentication (Authenticator App).</li>
                       <li>Terminate any unfamiliar sessions in your Google and Meta account settings.</li>
@@ -244,7 +244,7 @@ export default function BreachScanner() {
                   {/* Incident List */}
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-medium text-zinc-300">Incident Details</span>
+                      <span className="font-semibold text-zinc-900">Incident Details</span>
                       <span className="text-zinc-500">{emailResult.breaches.length} records</span>
                     </div>
 
@@ -252,18 +252,18 @@ export default function BreachScanner() {
                       {emailResult.breaches.map((b, i) => (
                         <div
                           key={i}
-                          className="p-3.5 rounded-lg bg-zinc-950 border border-zinc-800/80 space-y-1.5 text-xs"
+                          className="p-3.5 rounded-lg bg-zinc-50/70 border border-zinc-200 space-y-1.5 text-xs shadow-2xs"
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-medium text-zinc-200">{b.name}</span>
+                            <span className="font-semibold text-zinc-900">{b.name}</span>
                             <span className="text-[11px] text-zinc-500">{b.year}</span>
                           </div>
-                          <p className="text-zinc-400 line-clamp-2 leading-relaxed">
+                          <p className="text-zinc-600 line-clamp-2 leading-relaxed">
                             {b.details}
                           </p>
                           <div className="pt-1.5 flex flex-wrap gap-1">
                             {b.exposedData.slice(0, 3).map((item, dIdx) => (
-                              <span key={dIdx} className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-400">
+                              <span key={dIdx} className="text-[10px] px-1.5 py-0.5 rounded bg-white border border-zinc-200 text-zinc-600">
                                 {item}
                               </span>
                             ))}
@@ -275,15 +275,15 @@ export default function BreachScanner() {
                 </div>
               ) : (
                 /* CLEAN */
-                <div className="p-6 rounded-xl bg-zinc-950 border border-emerald-500/20 flex items-start gap-4">
-                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 shrink-0">
+                <div className="p-6 rounded-xl bg-emerald-50/70 border border-emerald-200 flex items-start gap-4">
+                  <div className="p-2 rounded-lg bg-emerald-100 text-emerald-700 shrink-0">
                     <ShieldCheck className="w-5 h-5" />
                   </div>
                   <div className="space-y-1">
-                    <h3 className="text-sm font-semibold text-zinc-100">
+                    <h3 className="text-sm font-semibold text-emerald-950">
                       No Records Found
                     </h3>
-                    <p className="text-xs text-zinc-400 leading-relaxed">
+                    <p className="text-xs text-emerald-800 leading-relaxed">
                       This email address was not identified in known public breach archives. Continue using unique passwords and two-factor authentication to maintain security.
                     </p>
                   </div>
@@ -296,21 +296,21 @@ export default function BreachScanner() {
 
       {/* TAB 2: ZERO-KNOWLEDGE PASSWORD CHECKER */}
       {activeTab === 'password' && (
-        <div className="bg-zinc-900/30 border border-zinc-800/60 rounded-2xl p-6 md:p-8 space-y-6">
+        <div className="bg-white border border-zinc-200 shadow-xs rounded-2xl p-6 md:p-8 space-y-6">
           <div className="space-y-1.5">
-            <h2 className="text-xl font-semibold text-zinc-100 tracking-tight">
+            <h2 className="text-xl font-semibold text-zinc-900 tracking-tight">
               Zero-Knowledge Password Verification
             </h2>
-            <p className="text-xs md:text-sm text-zinc-400 leading-relaxed">
+            <p className="text-xs md:text-sm text-zinc-500 leading-relaxed">
               Verify if a password appears in compiled hacker credential dictionaries without exposing your plain text.
             </p>
           </div>
 
           {/* Privacy Note */}
-          <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800/80 text-xs text-zinc-400 flex items-start gap-2.5">
-            <Info className="w-4 h-4 text-zinc-400 shrink-0 mt-0.5" />
+          <div className="p-3.5 rounded-xl bg-zinc-50 border border-zinc-200 text-xs text-zinc-600 flex items-start gap-2.5">
+            <Info className="w-4 h-4 text-zinc-500 shrink-0 mt-0.5" />
             <p className="leading-relaxed">
-              <strong className="text-zinc-300">k-Anonymity Model:</strong> Your password never leaves your browser. Only the first 5 characters of its local SHA-1 hash are queried anonymously.
+              <strong className="text-zinc-800">k-Anonymity Model:</strong> Your password never leaves your browser. Only the first 5 characters of its local SHA-1 hash are queried anonymously.
             </p>
           </div>
 
@@ -322,14 +322,14 @@ export default function BreachScanner() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter password to evaluate"
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 pl-11 pr-24 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600 text-sm transition-all"
+                className="w-full bg-zinc-50 focus:bg-white border border-zinc-200 rounded-xl px-4 py-3 pl-11 pr-24 text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 text-sm transition-all shadow-2xs"
               />
-              <KeyRound className="w-4 h-4 text-zinc-500 absolute left-4 top-1/2 -translate-y-1/2" />
+              <KeyRound className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2" />
               
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-20 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 p-1"
+                className="absolute right-20 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 p-1"
                 aria-label="Toggle password visibility"
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -338,7 +338,7 @@ export default function BreachScanner() {
               <button
                 type="submit"
                 disabled={pwLoading}
-                className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-medium rounded-lg transition-all disabled:opacity-50 flex items-center gap-2 shadow-sm"
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold rounded-lg transition-all disabled:opacity-50 flex items-center gap-2 shadow-xs"
               >
                 {pwLoading ? (
                   <>
@@ -352,7 +352,7 @@ export default function BreachScanner() {
             </div>
 
             {pwError && (
-              <p className="text-rose-400 text-xs flex items-center gap-1.5 pt-1">
+              <p className="text-rose-600 text-xs flex items-center gap-1.5 pt-1">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                 {pwError}
               </p>
@@ -361,28 +361,28 @@ export default function BreachScanner() {
 
           {/* RESULTS */}
           {pwResult && (
-            <div className="pt-4 border-t border-zinc-800/60 space-y-4">
+            <div className="pt-4 border-t border-zinc-200 space-y-4">
               {pwResult.leaked ? (
-                <div className="p-5 rounded-xl bg-zinc-950 border border-rose-500/30 space-y-2">
-                  <div className="flex items-center gap-2 text-rose-400">
+                <div className="p-5 rounded-xl bg-rose-50/70 border border-rose-200 space-y-2">
+                  <div className="flex items-center gap-2 text-rose-700">
                     <AlertTriangle className="w-4 h-4" />
                     <span className="text-xs font-semibold uppercase tracking-wider">Compromised Password</span>
                   </div>
-                  <h3 className="text-sm font-semibold text-zinc-100">
+                  <h3 className="text-sm font-semibold text-rose-950">
                     Identified {pwResult.count.toLocaleString()} times in recorded data breaches.
                   </h3>
-                  <p className="text-xs text-zinc-400 leading-relaxed">
+                  <p className="text-xs text-rose-800 leading-relaxed">
                     This password is known and indexed in public cybercrime databases. Do not use this password on any account, as it is susceptible to automated dictionary attacks.
                   </p>
                 </div>
               ) : (
-                <div className="p-5 rounded-xl bg-zinc-950 border border-emerald-500/30 flex items-start gap-3">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                <div className="p-5 rounded-xl bg-emerald-50/70 border border-emerald-200 flex items-start gap-3">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                   <div className="space-y-1">
-                    <h3 className="text-sm font-semibold text-zinc-100">
+                    <h3 className="text-sm font-semibold text-emerald-950">
                       Clean Record
                     </h3>
-                    <p className="text-xs text-zinc-400 leading-relaxed">
+                    <p className="text-xs text-emerald-800 leading-relaxed">
                       Zero occurrences found in over 1 billion breached credentials. Ensure this password is unique to a single service.
                     </p>
                   </div>
